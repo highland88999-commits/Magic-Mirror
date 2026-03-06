@@ -90,7 +90,7 @@ camera.position.set(0,5,10);
 let globalFont = null;
 let promptText, cursor;
 const fontLoader = new FontLoader();
-fontLoader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', font => {
+fontLoader.load('https://unpkg.com/three@0.168.0/examples/fonts/helvetiker_regular.typeface.json', font => {
   globalFont = font;
   promptText = new THREE.Mesh(
     new TextGeometry('Mirror, Mirror', {font: globalFont, size:0.5, height:0.1}),
@@ -150,10 +150,8 @@ async function askGrok(prompt) {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'grok-4-1-fast-reasoning', // or 'grok-4' etc.
-        messages: [{role: 'user', content: prompt}],
-        temperature: 0.7,
-        max_tokens: 512,
+        model: 'grok-beta', 
+        messages: [{ role: 'user', content: prompt }],
         stream: true
       })
     });
