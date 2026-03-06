@@ -79,18 +79,20 @@ box.position.set(0,2,0); scene.add(box);
 const light = new THREE.PointLight(0x88ffff, 0); light.position.set(5,5,5); scene.add(light);
 camera.position.set(0,5,10);
 
-// 3D Text
+// Global Font
+let globalFont;
 const fontLoader = new FontLoader();
-let promptText, cursor;
 fontLoader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', font => {
-  promptText = new THREE.Mesh(
-    new TextGeometry('Mirror, Mirror', {font, size:0.5, height:0.1}),
+  globalFont = font;
+  // Prompt Text
+  const promptText = new THREE.Mesh(
+    new TextGeometry('Mirror, Mirror', {font: globalFont, size:0.5, height:0.1}),
     new THREE.MeshBasicMaterial({color:0x00ffff, transparent:true, opacity:0})
   );
   promptText.position.set(-3,4,-4.9); promptText.rotation.y = Math.PI/8; scene.add(promptText);
 
-  cursor = new THREE.Mesh(
-    new TextGeometry('_', {font, size:0.5, height:0.1}),
+  const cursor = new THREE.Mesh(
+    new TextGeometry('_', {font: globalFont, size:0.5, height:0.1}),
     new THREE.MeshBasicMaterial({color:0x00ffff, transparent:true, opacity:0})
   );
   cursor.position.set(1.5,4,-4.9); cursor.rotation.y = Math.PI/8; scene.add(cursor);
@@ -182,23 +184,23 @@ async function askGrok(prompt) {
   }
 }
 
+let responseMeshes = [];
 function addResponseText(text) {
-  // Simple: remove old response text meshes if any
-  scene.children.forEach(child => {
-    if (child.userData.isResponse) scene.remove(child);
-  });
+  // Remove old response meshes
+  responseMeshes.forEach(mesh => scene.remove(mesh));
+  responseMeshes = [];
 
-  const words = text.split(' ');
-  words.forEach((word, i) => {
-    if (!word.trim()) return;
-    fontLoader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', font => {
-      const geo = new TextGeometry(word, {font, size:0.3, height:0.05});
-      const mat = new THREE.MeshBasicMaterial({color:0x88ffff, transparent:true, opacity:0.9});
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(-2 + (i % 8)*0.6, 1 - Math.floor(i/8)*0.4, -4.8);
-      mesh.userData.isResponse = true;
-      scene.add(mesh);
-    });
+  if (!globalFont) return; // Font not loaded yet
+
+  const lines = text.match(/.{1,30}/g) || []; // Simple word wrap to \~30 chars per line
+  lines.forEach((line, i) => {
+    const geo = new TextGeometry(line, {font: globalFont, size:0.3, height:0.05});
+    const mat = new THREE.MeshBasicMaterial({color:0x88ffff, transparent:true, opacity:0.9});
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(-2.5, 1 - i*0.4, -4.8);
+    mesh.rotation.y = Math.PI / 16; // Slight tilt
+    scene.add(mesh);
+    responseMeshes.push(mesh);
   });
 }
 
@@ -284,18 +286,28 @@ vidB.onclick=()=>{if(!stream)return;
     rec.start(); recing=true; vidB.textContent='■ Stop';}
   else{rec.stop();recing=false;vidB.textContent='Record Video';}};
 
-// Stores modal (same as before, shortened for brevity)
+// Stores modal
 const storesModal = document.createElement('div');
 Object.assign(storesModal.style,{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
   background:'rgba(0,20,40,0.88)',color:'#00ffff',padding:'30px',border:'2px solid #00ffff',borderRadius:'10px',
   maxWidth:'640px',width:'85%',display:'none',fontSize:'18px',backdropFilter:'blur(8px)',zIndex:1000});
-storesModal.innerHTML = `<h2>Smart Mirror Vendors 2026</h2><ul style="list-style:none;">
-  <li>→ <a href="https://verconsmartmirror.com/" target="_blank" style="color:#00ffff;">Vercon</a></li>
-  <li>→ <a href="https://mues-tec.com/" target="_blank" style="color:#00ffff;">MUES-TEC</a></li>
-  <!-- add others as needed -->
-</ul><button id="cls">Close</button>`;
+storesModal.innerHTML = `
+  <h2 style="margin:0 0 20px; text-align:center;">Smart Mirror Vendors 2026</h2>
+  <p>Explore places to buy smart/magic/interactive mirrors:</p>
+  <ul style="list-style:none; padding:0;">
+    <li>→ <a href="https://verconsmartmirror.com/" target="_blank" style="color:#00ffff;">Vercon Smart Mirror</a> – Innovative smart mirrors with health monitoring</li>
+    <li>→ <a href="https://mues-tec.com/" target="_blank" style="color:#00ffff;">MUES-TEC</a> – Smart makeup mirrors for salons and spas</li>
+    <li>→ <a href="https://electricmirror.com/" target="_blank" style="color:#00ffff;">Electric Mirror</a> – Luxury lighted and smart mirrors</li>
+    <li>→ <a href="https://www.seura.com/" target="_blank" style="color:#00ffff;">Séura</a> – High-end mirror TVs and smart mirrors</li>
+    <li>→ <a href="https://prodisplay.com/" target="_blank" style="color:#00ffff;">Pro Display</a> – Interactive smart mirror displays</li>
+    <li>→ <a href="https://www.himirror.com/" target="_blank" style="color:#00ffff;">HiMirror</a> – Beauty and skincare smart mirrors</li>
+    <li>→ <a href="https://www.gentex.com/" target="_blank" style="color:#00ffff;">Gentex Corporation</a> – Automotive and home smart mirrors</li>
+    <li>→ <a href="https://www.magna.com/" target="_blank" style="color:#00ffff;">Magna International</a> – Advanced smart mirror solutions</li>
+  </ul>
+  <button id="cls" style="margin-top:20px; padding:10px 20px; background:transparent; border:1px solid #00ffff; color:#00ffff; cursor:pointer; font-size:18px; display:block; margin:20px auto;">Close</button>
+`;
 document.body.appendChild(storesModal);
-document.getElementById('cls').onclick=()=>storesModal.style.display='none';
+document.getElementById('cls').addEventListener('click', () => storesModal.style.display = 'none');
 
 // Resize + Animate (same as before)
 window.addEventListener('resize', () => {
