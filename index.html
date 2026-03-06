@@ -1,0 +1,400 @@
+import * as THREE from 'three';
+import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
+import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
+import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+
+// 1. Setup Scene, Camera, Renderer
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Post-processing
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
+
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.2, 0.4, 0.85);
+composer.addPass(bloomPass);
+
+const scanlineShader = {
+    uniforms: {
+        tDiffuse: { value: null },
+        time: { value: 0.0 },
+        opacity: { value: 1.0 }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float time;
+        uniform float opacity;
+        varying vec2 vUv;
+        void main() {
+            vec4 color = texture2D(tDiffuse, vUv);
+            float scan = sin(vUv.y * 800.0 + time * 10.0) * 0.05;
+            color.rgb += scan;
+            float noise = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453) * 0.02;
+            color.rgb += noise;
+            gl_FragColor = color * opacity;
+        }
+    `
+};
+const scanlinePass = new ShaderPass(scanlineShader);
+composer.addPass(scanlinePass);
+
+// 2. Mirror
+const mirrorGeometry = new THREE.CircleGeometry(5, 64);
+const mirror = new Reflector(mirrorGeometry, {
+    clipBias: 0.003,
+    textureWidth: window.innerWidth * window.devicePixelRatio,
+    textureHeight: window.innerHeight * window.devicePixelRatio,
+    color: 0x777777
+});
+mirror.position.y = 5;
+mirror.position.z = -5;
+scene.add(mirror);
+
+// 3. Holographic Overlay
+const holoOverlayGeo = new THREE.CircleGeometry(5.05, 64);
+const holoMaterial = new THREE.ShaderMaterial({
+    transparent: true,
+    uniforms: {
+        time: { value: 0.0 },
+        alpha: { value: 0.0 }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        varying vec2 vUv;
+        uniform float time;
+        uniform float alpha;
+        void main() {
+            float scanline = sin(vUv.y * 200.0 + time * 5.0) * 0.1;
+            vec3 color = vec3(0.0, 0.8, 1.0);
+            float finalAlpha = alpha * (0.2 + scanline);
+            gl_FragColor = vec4(color, finalAlpha);
+        }
+    `
+});
+const overlay = new THREE.Mesh(holoOverlayGeo, holoMaterial);
+overlay.position.copy(mirror.position);
+overlay.position.z += 0.01;
+scene.add(overlay);
+
+// 4. Test Object + Light
+const box = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial({ color: 0xff00ff })
+);
+box.position.set(0, 2, 0);
+scene.add(box);
+
+const light = new THREE.PointLight(0x88ffff, 0);
+light.position.set(5, 5, 5);
+scene.add(light);
+
+camera.position.z = 10;
+camera.position.y = 5;
+
+// 5. Interactivity
+let isIlluminated = false;
+let targetIntensity = 0;
+let targetAlpha = 0;
+const illuminationSpeed = 0.05;
+
+const fontLoader = new FontLoader();
+let promptTextMesh, cursorMesh;
+
+fontLoader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', (font) => {
+    const textGeometry = new TextGeometry('Mirror, Mirror', {
+        font, size: 0.5, height: 0.1
+    });
+    const textMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0 });
+    promptTextMesh = new THREE.Mesh(textGeometry, textMaterial);
+    promptTextMesh.position.set(-3, 4, -4.9);
+    promptTextMesh.rotation.y = Math.PI / 8;
+    scene.add(promptTextMesh);
+
+    const cursorGeometry = new TextGeometry('_', { font, size: 0.5, height: 0.1 });
+    const cursorMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0 });
+    cursorMesh = new THREE.Mesh(cursorGeometry, cursorMaterial);
+    cursorMesh.position.set(1.5, 4, -4.9);
+    cursorMesh.rotation.y = Math.PI / 8;
+    scene.add(cursorMesh);
+});
+
+let cursorVisible = true;
+let cursorBlinkTimer = 0;
+const blinkInterval = 0.5;
+
+// Input + Voice
+const inputContainer = document.createElement('div');
+Object.assign(inputContainer.style, {
+    position: 'absolute', bottom: '20%', left: '50%', transform: 'translateX(-50%)',
+    display: 'none', fontFamily: 'monospace', color: '#00ffff', fontSize: '24px',
+    background: 'rgba(0,0,0,0.5)', padding: '10px', border: '1px solid #00ffff',
+    borderRadius: '5px', flexDirection: 'row', alignItems: 'center'
+});
+const inputBox = document.createElement('input');
+Object.assign(inputBox.style, { background: 'transparent', border: 'none', color: '#00ffff', fontSize: 'inherit', outline: 'none', flex: '1' });
+inputBox.type = 'text';
+inputBox.placeholder = 'Enter your prompt...';
+
+const voiceButton = document.createElement('button');
+voiceButton.textContent = '🎤';
+Object.assign(voiceButton.style, { background: 'transparent', border: 'none', color: '#00ffff', fontSize: '24px', cursor: 'pointer', marginLeft: '10px' });
+
+inputContainer.appendChild(inputBox);
+inputContainer.appendChild(voiceButton);
+document.body.appendChild(inputContainer);
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition;
+if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    voiceButton.addEventListener('click', () => {
+        recognition.start();
+        voiceButton.textContent = '🔴';
+    });
+
+    recognition.onresult = (e) => { inputBox.value = e.results[0][0].transcript; voiceButton.textContent = '🎤'; };
+    recognition.onend = () => voiceButton.textContent = '🎤';
+    recognition.onerror = (e) => { console.error('Speech error:', e.error); voiceButton.textContent = '🎤'; };
+} else {
+    voiceButton.disabled = true;
+    voiceButton.textContent = '❌';
+}
+
+function submitPrompt() {
+    const prompt = inputBox.value.trim();
+    if (prompt) {
+        console.log('Prompt:', prompt);
+        inputBox.value = '';
+    }
+}
+inputBox.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitPrompt(); });
+
+// Mirror Stores Modal (updated with 2026 vendors)
+const storesModal = document.createElement('div');
+Object.assign(storesModal.style, {
+    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+    background: 'rgba(0, 20, 40, 0.85)', color: '#00ffff', padding: '30px', border: '2px solid #00ffff',
+    borderRadius: '10px', maxWidth: '600px', width: '80%', display: 'none',
+    fontFamily: 'monospace', fontSize: '18px', backdropFilter: 'blur(8px)', zIndex: '1000'
+});
+storesModal.innerHTML = `
+    <h2 style="margin:0 0 20px; text-align:center;">Mirror Stores & Vendors (2026)</h2>
+    <p>Explore places to buy smart/magic/interactive mirrors:</p>
+    <ul style="list-style:none; padding:0;">
+        <li>→ <a href="https://www.metroclick.com/digital-mirror" target="_blank" style="color:#00ffff;">MetroClick</a> – Interactive digital smart mirrors for retail and events<grok:render card_id="ca75f7" card_type="citation_card" type="render_inline_citation"><argument name="citation_id">0</argument></grok:render></li>
+        <li>→ <a href="https://prodisplay.com/touch-screens/interactive-screens/smart-mirror-touch-screen" target="_blank" style="color:#00ffff;">Pro Display</a> – Smart mirror touch screens with multi-touch overlays<grok:render card_id="a412fc" card_type="citation_card" type="render_inline_citation"><argument name="citation_id">8</argument></grok:render></li>
+        <li>→ <a href="https://www.twowaymirrors.com/smart-mirror" target="_blank" style="color:#00ffff;">TwoWayMirrors.com</a> – Smart mirror glass and DIY kits<grok:render card_id="e08443" card_type="citation_card" type="render_inline_citation"><argument name="citation_id">7</argument></grok:render></li>
+        <li>→ <a href="https://www.magicmirror.me/" target="_blank" style="color:#00ffff;">MagicMirror.me</a> – Integrated digital kiosk solutions with magic mirrors<grok:render card_id="151713" card_type="citation_card" type="render_inline_citation"><argument name="citation_id">5</argument></grok:render></li>
+        <li>→ <a href="https://verconsmartmirror.com/product/bathroom-smart-mirror" target="_blank" style="color:#00ffff;">Vercon Smart Mirror</a> – Bathroom and home smart mirrors with warranties<grok:render card_id="afac7d" card_type="citation_card" type="render_inline_citation"><argument name="citation_id">4</argument></grok:render></li>
+        <li>→ <a href="https://mues-tec.com/interactive-fashion-mirrors-in-high-end-shopping-centers" target="_blank" style="color:#00ffff;">Mues-Tec</a> – Interactive fashion mirrors for shopping centers<grok:render card_id="e340e4" card_type="citation_card" type="render_inline_citation"><argument name="citation_id">1</argument></grok:render></li>
+    </ul>
+    <button id="closeStores" style="margin-top:20px; padding:10px 20px; background:transparent; border:1px solid #00ffff; color:#00ffff; cursor:pointer; font-size:18px; display:block; margin:20px auto;">Close</button>
+`;
+document.body.appendChild(storesModal);
+
+document.getElementById('closeStores').addEventListener('click', () => {
+    storesModal.style.display = 'none';
+});
+
+// Click handling with raycaster for mirror-specific detection
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+renderer.domElement.addEventListener('click', (event) => {
+    // Normalize mouse coords (-1 to +1)
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObject(mirror);
+
+    if (intersects.length > 0) {
+        // Clicked ON the mirror → open stores list
+        storesModal.style.display = 'block';
+    } else {
+        // General scene click → toggle illumination
+        isIlluminated = !isIlluminated;
+        targetIntensity = isIlluminated ? 1.5 : 0;
+        targetAlpha = isIlluminated ? 1 : 0;
+        inputContainer.style.display = isIlluminated ? 'flex' : 'none';
+        if (promptTextMesh) promptTextMesh.material.opacity = targetAlpha;
+        if (cursorMesh) cursorMesh.material.opacity = targetAlpha;
+        if (isIlluminated) {
+            inputBox.focus();
+            startUserCamera();
+            captureContainer.style.display = 'flex';
+        } else {
+            stopUserCamera();
+            captureContainer.style.display = 'none';
+            storesModal.style.display = 'none'; // also close modal if open
+        }
+    }
+});
+
+// 6. Webcam (unchanged from your last version)
+let video, videoTexture, bgPlane, mediaStream, mediaRecorder, recordedChunks = [], isRecording = false;
+
+async function startUserCamera() {
+    try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video = document.createElement('video');
+        video.srcObject = mediaStream;
+        video.muted = true;
+        video.play();
+
+        video.addEventListener('loadedmetadata', () => {
+            videoTexture = new THREE.VideoTexture(video);
+            videoTexture.minFilter = THREE.LinearFilter;
+            videoTexture.magFilter = THREE.LinearFilter;
+
+            const geo = new THREE.PlaneGeometry(80, 60);
+            const mat = new THREE.MeshBasicMaterial({ map: videoTexture, side: THREE.BackSide });
+            bgPlane = new THREE.Mesh(geo, mat);
+            bgPlane.position.set(0, 5, -25);
+            bgPlane.scale.set(-1, 1, 1); // Horizontal flip for mirror
+            scene.add(bgPlane);
+        });
+    } catch (err) { console.error('Camera error:', err); }
+}
+
+function stopUserCamera() {
+    if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+    if (bgPlane) scene.remove(bgPlane);
+    if (video) { video.pause(); video.srcObject = null; }
+}
+
+// 7. Capture buttons
+const captureContainer = document.createElement('div');
+Object.assign(captureContainer.style, {
+    position: 'absolute', top: '50%', right: '20px', transform: 'translateY(-50%)',
+    display: 'none', flexDirection: 'column', gap: '10px'
+});
+
+const photoButton = document.createElement('button');
+photoButton.textContent = 'Take Photo';
+Object.assign(photoButton.style, {
+    background: 'rgba(0, 0, 0, 0.5)',
+    border: '1px solid #00ffff',
+    color: '#00ffff',
+    padding: '10px 20px',
+    cursor: 'pointer',
+    fontFamily: 'monospace'
+});
+
+const videoButton = document.createElement('button');
+videoButton.textContent = 'Record Video';
+Object.assign(videoButton.style, {
+    background: 'rgba(0, 0, 0, 0.5)',
+    border: '1px solid #00ffff',
+    color: '#00ffff',
+    padding: '10px 20px',
+    cursor: 'pointer',
+    fontFamily: 'monospace'
+});
+
+captureContainer.appendChild(photoButton);
+captureContainer.appendChild(videoButton);
+document.body.appendChild(captureContainer);
+
+photoButton.addEventListener('click', () => {
+    if (video) {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        const link = document.createElement('a');
+        link.download = 'mirror_photo.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    }
+});
+
+videoButton.addEventListener('click', () => {
+    if (!isRecording) {
+        if (mediaStream) {
+            mediaRecorder = new MediaRecorder(mediaStream);
+            mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const link = document.createElement('a');
+                link.download = 'mirror_video.webm';
+                link.href = URL.createObjectURL(blob);
+                link.click();
+                recordedChunks = [];
+            };
+            mediaRecorder.start();
+            isRecording = true;
+            videoButton.textContent = 'Stop Recording';
+        }
+    } else {
+        mediaRecorder.stop();
+        isRecording = false;
+        videoButton.textContent = 'Record Video';
+    }
+});
+
+// Resize
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+    mirror.getRenderTarget().setSize(window.innerWidth * window.devicePixelRatio, window.innerHeight * window.devicePixelRatio);
+});
+
+// 8. Animate
+let prevTime = 0;
+function animate(time) {
+    requestAnimationFrame(animate);
+    const delta = (time - prevTime) / 1000;
+    prevTime = time;
+
+    box.rotation.y += 0.01;
+    holoMaterial.uniforms.time.value += 0.05;
+    scanlinePass.uniforms.time.value += 0.05;
+
+    light.intensity = THREE.MathUtils.lerp(light.intensity, targetIntensity, illuminationSpeed);
+    holoMaterial.uniforms.alpha.value = THREE.MathUtils.lerp(holoMaterial.uniforms.alpha.value, targetAlpha, illuminationSpeed);
+
+    if (isIlluminated && cursorMesh) {
+        cursorBlinkTimer += delta;
+        if (cursorBlinkTimer > blinkInterval) {
+            cursorVisible = !cursorVisible;
+            cursorMesh.visible = cursorVisible;
+            cursorBlinkTimer -= blinkInterval;
+        }
+    }
+
+    if (videoTexture) videoTexture.needsUpdate = true;
+
+    composer.render();
+}
+animate();
+
+// Cleanup
+window.addEventListener('beforeunload', stopUserCamera);
