@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Olympus By Merlin – Hovering Mirror & Dome</title>
+  <title>Olympus By Merlin – Emissive Dome & Mirror</title>
   <style>
     body { margin: 0; overflow: hidden; background: black; font-family: monospace; }
     canvas { display: block; outline: none; }
@@ -28,80 +28,88 @@ import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/exam
 // Scene & Camera Setup
 // ────────────────────────────────────────────────
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x000000); 
+scene.background = new THREE.Color(0x020205); // Deep, dark atmospheric base
 
-// Increase far clipping plane to allow zooming far out of the building
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 3000);
 camera.position.set(0, 10, 30); 
-scene.add(camera); // Required because the camera will have children (the mirror)
+scene.add(camera);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setSize(window.innerWidth, window.innerHeight);
+// Add ACESFilmic tone mapping to prevent bright colors from washing out to pure white
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
 document.body.appendChild(renderer.domElement);
 
 // Post-processing: Global Bloom
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.2);
+// Tuned bloom: higher threshold so only the bright/neon parts of the JPEGs glow heavily
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.2, 0.5, 0.4);
 composer.addPass(bloomPass);
 
 // ────────────────────────────────────────────────
-// Camera Controls (Swiping & Zooming)
+// Camera Controls
 // ────────────────────────────────────────────────
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.enablePan = true;
-// Target the center of the room
 controls.target.set(0, 15, 0);
-// Prevent going entirely under the floor
 controls.maxPolarAngle = Math.PI / 2 + 0.1; 
-// Allow them to zoom way out
 controls.maxDistance = 800; 
 controls.minDistance = 2;
 
 // ────────────────────────────────────────────────
-// Environment Wrapping (Floor & Domes)
+// Environment Wrapping (Emissive Setup)
 // ────────────────────────────────────────────────
 const textureLoader = new THREE.TextureLoader();
 
-// Load the newly defined assets verbatim
 const floorTex = textureLoader.load('assets/Floor wrap.JPEG');
 const innerDomeTex = textureLoader.load('assets/Inner dome wrap.JPEG');
 const outerDomeTex = textureLoader.load('assets/Outer dome wrap.JPEG');
 
-// Texture settings for better wrapping appearance
 [floorTex, innerDomeTex, outerDomeTex].forEach(tex => {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
 });
-floorTex.repeat.set(4, 4); // Repeat floor texture to create a vast ground
+floorTex.repeat.set(4, 4);
 
-// 1. The Floor
+// By setting emissiveMap to the texture itself, the image acts as its own light source.
+// Adjust emissiveIntensity (0.0 to 1.0) if it is too dim or too blown out.
 const floorGeo = new THREE.PlaneGeometry(1000, 1000);
-const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.6, metalness: 0.2 });
+const floorMat = new THREE.MeshStandardMaterial({ 
+    map: floorTex, 
+    emissive: 0xffffff,
+    emissiveMap: floorTex,
+    emissiveIntensity: 0.35, 
+    roughness: 0.8,
+    metalness: 0.2
+});
 const floor = new THREE.Mesh(floorGeo, floorMat);
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
-// 2. The Inner Dome (Viewable from inside)
-// 100 radius hemisphere
 const innerDomeGeo = new THREE.SphereGeometry(100, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2);
 const innerDomeMat = new THREE.MeshStandardMaterial({ 
     map: innerDomeTex, 
-    side: THREE.BackSide, // Renders on the inside
-    roughness: 0.4 
+    emissive: 0xffffff,
+    emissiveMap: innerDomeTex,
+    emissiveIntensity: 0.4,
+    side: THREE.BackSide, 
+    roughness: 0.6 
 });
 const innerDome = new THREE.Mesh(innerDomeGeo, innerDomeMat);
 scene.add(innerDome);
 
-// 3. The Outer Dome (Viewable when zooming out)
-// Slightly larger than inner dome to prevent z-fighting
 const outerDomeGeo = new THREE.SphereGeometry(102, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2);
 const outerDomeMat = new THREE.MeshStandardMaterial({ 
     map: outerDomeTex, 
-    side: THREE.FrontSide, // Renders on the outside
+    emissive: 0xffffff,
+    emissiveMap: outerDomeTex,
+    emissiveIntensity: 0.6, // Slightly brighter for visibility when zoomed out
+    side: THREE.FrontSide, 
     roughness: 0.8
 });
 const outerDome = new THREE.Mesh(outerDomeGeo, outerDomeMat);
@@ -112,7 +120,6 @@ scene.add(outerDome);
 // ────────────────────────────────────────────────
 const mirrorGroup = new THREE.Group();
 
-// Video Setup
 const video = document.createElement('video');
 video.src = 'assets/gemini_generated_video_763BE1F0.mp4';
 video.loop = true;
@@ -127,11 +134,9 @@ videoTex.colorSpace = THREE.SRGBColorSpace;
 const vidGeo = new THREE.CircleGeometry(3.3, 64);
 const vidMat = new THREE.MeshBasicMaterial({ map: videoTex });
 const videoMesh = new THREE.Mesh(vidGeo, vidMat);
-// Positioned slightly behind the frame
 videoMesh.position.set(0, 0, -0.1); 
 mirrorGroup.add(videoMesh);
 
-// Rune Frame Setup
 const frameTex = textureLoader.load('assets/IMG_1488.jpeg');
 const frameMat = new THREE.ShaderMaterial({
   uniforms: { tDiffuse: { value: frameTex }, time: { value: 0 } },
@@ -150,16 +155,13 @@ const frameMat = new THREE.ShaderMaterial({
       vec4 texColor = texture2D(tDiffuse, vUv);
       float dist = distance(vUv, vec2(0.5));
       
-      // Punch out the center for the video
       if(dist < 0.26) discard;
       
-      // Neon pulse
-      float pulse = 1.0 + sin(time * 2.0) * 0.15;
+      float pulse = 1.0 + sin(time * 2.0) * 0.2; // Increased pulse intensity slightly
       if (texColor.r > 0.2 || texColor.b > 0.2) {
           texColor.rgb *= pulse;
       }
       
-      // Edge fade
       float edgeFade = smoothstep(0.5, 0.45, dist);
       gl_FragColor = vec4(texColor.rgb * edgeFade, 1.0);
     }
@@ -173,24 +175,27 @@ const frameMesh = new THREE.Mesh(frameGeo, frameMat);
 frameMesh.position.set(0, 0, 0); 
 mirrorGroup.add(frameMesh);
 
-// Lock mirror to the camera, positioned comfortably in front of the lens
-// Z = -15 ensures it is large and clearly visible
 mirrorGroup.position.set(0, 0, -15);
 camera.add(mirrorGroup);
 
 // ────────────────────────────────────────────────
-// Lighting
+// Lighting (Atmospheric Fill)
 // ────────────────────────────────────────────────
-const ambient = new THREE.AmbientLight(0xffffff, 0.4); 
+// A soft base ambient light
+const ambient = new THREE.AmbientLight(0xffffff, 0.2); 
 scene.add(ambient);
 
-// A strong light inside the dome to illuminate the floor and inner walls
-const centerLight = new THREE.PointLight(0x00ffff, 8000, 500);
-centerLight.position.set(0, 50, 0);
-scene.add(centerLight);
+// Cyan and Magenta point lights inside to bounce off the non-emissive roughness of the textures
+const cyanLight = new THREE.PointLight(0x00ffff, 40, 150);
+cyanLight.position.set(-30, 20, 30);
+scene.add(cyanLight);
 
-// A sun-like light outside so you can see the outer dome when zoomed out
-const directionalLight = new THREE.DirectionalLight(0xff00ff, 2);
+const magentaLight = new THREE.PointLight(0xff00ff, 40, 150);
+magentaLight.position.set(30, 20, -30);
+scene.add(magentaLight);
+
+// Outer directional light for the exterior dome
+const directionalLight = new THREE.DirectionalLight(0xaabbff, 1.5);
 directionalLight.position.set(100, 200, 100);
 scene.add(directionalLight);
 
@@ -204,7 +209,6 @@ window.addEventListener('resize', () => {
   composer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Trigger video on first interaction (required by browsers for media)
 window.addEventListener('pointerdown', () => {
     if(video.paused) video.play();
 }, { once: true });
@@ -216,13 +220,10 @@ function loop() {
   
   const elapsedTime = clock.getElapsedTime();
   
-  // Update controls for smooth swiping and damping
   controls.update();
 
-  // Pass time to frame shader for neon pulse
   frameMat.uniforms.time.value = elapsedTime;
   
-  // Make the entire mirror group smoothly hover up and down
   mirrorGroup.position.y = Math.sin(elapsedTime * 1.5) * 0.4;
   
   if (video.readyState >= video.HAVE_CURRENT_DATA) {
