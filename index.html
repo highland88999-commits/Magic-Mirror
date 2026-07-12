@@ -59,26 +59,26 @@ controls.maxPolarAngle = Math.PI / 2 + 0.05;
 controls.maxDistance = 800; 
 controls.minDistance = 1;
 
-// UI
+// ────────────────────────────────────────────────
+// Loading Manager & Texture Loader
+// ────────────────────────────────────────────────
 const uiLayer = document.getElementById('ui-layer');
 const manager = new THREE.LoadingManager();
 
 manager.onStart = () => uiLayer.innerText = `SYSTEM_LOADING...`;
-manager.onLoad = () => uiLayer.innerText = 'SYSTEM_ONLINE // Swipe to rotate • Pinch to zoom';
+manager.onLoad = () => uiLayer.innerText = 'SYSTEM_ONLINE // Tap to initialize sequence.';
 manager.onError = (url) => {
   uiLayer.innerText = `ERROR loading ${url}`;
   uiLayer.style.color = "#ff0044";
 };
 
+// CRITICAL: Passing manager to TextureLoader to ensure it tracks loading state
 const textureLoader = new THREE.TextureLoader(manager);
 
-// ────────────────────────────────────────────────
-// Textures (Updated to match your repo filenames)
-// ────────────────────────────────────────────────
 const floorTex = textureLoader.load('Floor wrap.JPEG');
 const innerDomeTex = textureLoader.load('Inner dome wrap.JPEG');
 const outerDomeTex = textureLoader.load('Outer dome wrap.JPEG');
-const frameTex = textureLoader.load('IMG_1488.jpeg');   // ← Mirror frame wrap
+const frameTex = textureLoader.load('IMG_1488.jpeg');
 
 [floorTex, innerDomeTex, outerDomeTex, frameTex].forEach(tex => {
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -88,7 +88,7 @@ floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
 floorTex.repeat.set(4, 4);
 
 // ────────────────────────────────────────────────
-// Floor
+// Floor & Domes
 // ────────────────────────────────────────────────
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(1000, 1000),
@@ -103,10 +103,7 @@ const floor = new THREE.Mesh(
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
-// ────────────────────────────────────────────────
-// Domes
-// ────────────────────────────────────────────────
-const innerDome = new THREE.Mesh(
+scene.add(new THREE.Mesh(
   new THREE.SphereGeometry(100, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2),
   new THREE.MeshStandardMaterial({ 
     map: innerDomeTex, 
@@ -116,10 +113,9 @@ const innerDome = new THREE.Mesh(
     side: THREE.BackSide,
     roughness: 0.8 
   })
-);
-scene.add(innerDome);
+));
 
-const outerDome = new THREE.Mesh(
+scene.add(new THREE.Mesh(
   new THREE.SphereGeometry(102, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2),
   new THREE.MeshStandardMaterial({ 
     map: outerDomeTex, 
@@ -129,99 +125,51 @@ const outerDome = new THREE.Mesh(
     side: THREE.FrontSide,
     roughness: 0.9
   })
-);
-scene.add(outerDome);
+));
 
 // ────────────────────────────────────────────────
-// Vortex Mirror (Video inside + Frame wrap)
+// Vortex Mirror
 // ────────────────────────────────────────────────
 const mirrorGroup = new THREE.Group();
 
-// Video playing inside the mirror
 const video = document.createElement('video');
 video.src = 'gemini_generated_video_763BE1F0.mp4';
 video.loop = true;
 video.muted = true;
 video.playsInline = true;
 video.crossOrigin = "anonymous";
-video.play().catch(() => {});
 
 const videoTex = new THREE.VideoTexture(video);
 videoTex.colorSpace = THREE.SRGBColorSpace;
 
-const videoMesh = new THREE.Mesh(
+mirrorGroup.add(new THREE.Mesh(
   new THREE.CircleGeometry(3.3, 64),
   new THREE.MeshBasicMaterial({ map: videoTex })
-);
-videoMesh.position.set(0, 0, -0.15);
-mirrorGroup.add(videoMesh);
+).position.set(0, 0, -0.15));
 
-// Frame (using IMG_1488.jpeg)
 const frameMat = new THREE.ShaderMaterial({
-  uniforms: { 
-    tDiffuse: { value: frameTex }, 
-    time: { value: 0 } 
-  },
-  vertexShader: `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    uniform sampler2D tDiffuse;
-    uniform float time;
-    varying vec2 vUv;
-    void main() {
-      vec4 texColor = texture2D(tDiffuse, vUv);
-      float dist = distance(vUv, vec2(0.5));
-      
-      if(dist < 0.262) discard; 
-      
-      float pulse = 1.0 + sin(time * 1.5) * 0.25; 
-      if (texColor.r > 0.15 || texColor.b > 0.15) {
-          texColor.rgb *= pulse;
-      }
-      
-      float edgeFade = smoothstep(0.5, 0.44, dist); 
-      gl_FragColor = vec4(texColor.rgb * edgeFade, 1.0);
-    }
-  `,
+  uniforms: { tDiffuse: { value: frameTex }, time: { value: 0 } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float time; varying vec2 vUv; void main() { 
+    vec4 c = texture2D(tDiffuse, vUv); float d = distance(vUv, vec2(0.5));
+    if(d < 0.262) discard; 
+    c.rgb *= (1.0 + sin(time * 1.5) * 0.25);
+    gl_FragColor = vec4(c.rgb * smoothstep(0.5, 0.44, d), 1.0); }`,
   transparent: true,
   side: THREE.DoubleSide
 });
 
-const frameMesh = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), frameMat);
-mirrorGroup.add(frameMesh);
-
+mirrorGroup.add(new THREE.Mesh(new THREE.PlaneGeometry(12, 12), frameMat));
 mirrorGroup.position.set(0, 0, -14);
 camera.add(mirrorGroup);
 
 // ────────────────────────────────────────────────
-// Lighting
+// Lighting & Loop
 // ────────────────────────────────────────────────
 scene.add(new THREE.AmbientLight(0xffffff, 0.15));
-
-const cyanLight = new THREE.PointLight(0x00ffff, 60, 150);
-cyanLight.position.set(-20, 30, 20);
-scene.add(cyanLight);
-
-const magentaLight = new THREE.PointLight(0xaa00ff, 60, 150);
-magentaLight.position.set(20, 30, -20);
-scene.add(magentaLight);
-
+scene.add(new THREE.PointLight(0x00ffff, 60, 150).position.set(-20, 30, 20));
+scene.add(new THREE.PointLight(0xaa00ff, 60, 150).position.set(20, 30, -20));
 scene.add(new THREE.DirectionalLight(0x4466ff, 1.2));
-
-// ────────────────────────────────────────────────
-// Animation Loop
-// ────────────────────────────────────────────────
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
-});
 
 window.addEventListener('pointerdown', () => {
   if (video.paused) video.play();
@@ -229,23 +177,15 @@ window.addEventListener('pointerdown', () => {
 }, { once: true });
 
 const clock = new THREE.Clock();
-
 function loop() {
   requestAnimationFrame(loop);
   const t = clock.getElapsedTime();
-
   controls.update();
   frameMat.uniforms.time.value = t;
-
   mirrorGroup.position.y = Math.sin(t * 1.2) * 0.35;
-  mirrorGroup.rotation.x = Math.sin(t * 0.8) * 0.02;
-  mirrorGroup.rotation.y = Math.cos(t * 0.9) * 0.02;
-
   if (video.readyState >= video.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
-
   composer.render();
 }
-
 loop();
 </script>
 </body>
