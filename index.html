@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Olympus By Merlin – Holographic Mirror with Grok</title>
+  <title>Olympus By Merlin – Rune Mirror</title>
   <style>
     body { margin: 0; overflow: hidden; background: black; font-family: monospace; }
     canvas { display: block; }
@@ -13,337 +13,158 @@
 
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js';
-import { Reflector } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/objects/Reflector.js';
 import { FontLoader } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/loaders/FontLoader.js';
 import { TextGeometry } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/geometries/TextGeometry.js';
 import { EffectComposer } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/ShaderPass.js';
 
 // ────────────────────────────────────────────────
 // Scene Setup
 // ────────────────────────────────────────────────
 const scene = new THREE.Scene();
+// Keep the room strictly black for now
+scene.background = new THREE.Color(0x000000); 
+
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+camera.position.set(0, 5, 10);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// Post-processing
+// Post-processing (Black Bloom configuration)
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.2, 0.4, 0.85);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.8, 0.5, 0.2);
 composer.addPass(bloomPass);
-bloomPass.strength = 0.7; // Lowered for debugging
 
-const scanlineShader = {
-  uniforms: { tDiffuse: { value: null }, time: { value: 0.0 }, opacity: { value: 1.0 } },
-  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float time; uniform float opacity; varying vec2 vUv;
-    void main() { vec4 color = texture2D(tDiffuse, vUv);
-      float scan = sin(vUv.y * 800.0 + time * 10.0) * 0.05; color.rgb += scan;
-      float noise = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453) * 0.02; color.rgb += noise;
-      gl_FragColor = color * opacity; }`
-};
-const scanlinePass = new ShaderPass(scanlineShader);
-scanlinePass.renderToScreen = true; // Critical: Ensures final output to screen
-composer.addPass(scanlinePass);
+// ────────────────────────────────────────────────
+// Sequence / Video Element (The Water/Magic)
+// ────────────────────────────────────────────────
+const video = document.createElement('video');
+// Sourced from your GitHub assets structure
+video.src = 'assets/gemini_generated_video_763BE1F0.mp4';
+video.loop = true;
+video.muted = true; // Required for autoplay without interaction
+video.playsInline = true;
+video.crossOrigin = "anonymous";
+video.play();
 
-// Mirror
-const mirrorGeo = new THREE.CircleGeometry(5, 64);
-const mirror = new Reflector(mirrorGeo, {
-  clipBias: 0.003,
-  textureWidth: window.innerWidth * window.devicePixelRatio,
-  textureHeight: window.innerHeight * window.devicePixelRatio,
-  color: 0x777777
-});
-mirror.position.set(0, 5, -5);
-scene.add(mirror);
+const videoTex = new THREE.VideoTexture(video);
+videoTex.minFilter = THREE.LinearFilter;
+videoTex.magFilter = THREE.LinearFilter;
 
-const holoGeo = new THREE.CircleGeometry(5.05, 64);
-const holoMat = new THREE.ShaderMaterial({
-  transparent: true,
-  uniforms: { time: { value: 0 }, alpha: { value: 0 } },
-  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: `varying vec2 vUv; uniform float time; uniform float alpha;
-    void main() { float scanline = sin(vUv.y * 200.0 + time * 5.0) * 0.1;
-      vec3 color = vec3(0.0, 0.8, 1.0); float finalAlpha = alpha * (0.2 + scanline);
-      gl_FragColor = vec4(color, finalAlpha); }`
-});
-const overlay = new THREE.Mesh(holoGeo, holoMat);
-overlay.position.copy(mirror.position);
-overlay.position.z += 0.01;
-scene.add(overlay);
+// Create the circular screen for the video to sit on
+const vidGeo = new THREE.CircleGeometry(3.3, 64);
+const vidMat = new THREE.MeshBasicMaterial({ map: videoTex });
+const videoMesh = new THREE.Mesh(vidGeo, vidMat);
+videoMesh.position.set(0, 5, -5.1); // Pushed slightly back
+scene.add(videoMesh);
 
-// Objects
-const box = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshStandardMaterial({color:0xff00ff}));
-box.position.set(0,2,0); scene.add(box);
+// ────────────────────────────────────────────────
+// The Rune Frame (IMG_1488.jpeg)
+// ────────────────────────────────────────────────
+const textureLoader = new THREE.TextureLoader();
+const frameTex = textureLoader.load('assets/IMG_1488.jpeg');
 
-const light = new THREE.PointLight(0x88ffff, 0); light.position.set(5,5,5); scene.add(light);
-const ambient = new THREE.AmbientLight(0xffffff, 0.3); scene.add(ambient); // Added for visibility
-scene.background = new THREE.Color(0x112233); // Debug: Dark blue-gray to confirm rendering
-
-camera.position.set(0,5,10);
-
-// Global Font
-let globalFont = null;
-let promptText, cursor;
-const fontLoader = new FontLoader();
-fontLoader.load('https://unpkg.com/three@0.168.0/examples/fonts/helvetiker_regular.typeface.json', font => {
-  globalFont = font;
-  promptText = new THREE.Mesh(
-    new TextGeometry('Mirror, Mirror', {font: globalFont, size:0.5, height:0.1}),
-    new THREE.MeshBasicMaterial({color:0x00ffff, transparent:true, opacity:0})
-  );
-  promptText.position.set(-3,4,-4.9); promptText.rotation.y = Math.PI/8; scene.add(promptText);
-
-  cursor = new THREE.Mesh(
-    new TextGeometry('_', {font: globalFont, size:0.5, height:0.1}),
-    new THREE.MeshBasicMaterial({color:0x00ffff, transparent:true, opacity:0})
-  );
-  cursor.position.set(1.5,4,-4.9); cursor.rotation.y = Math.PI/8; scene.add(cursor);
-});
-
-// State
-let illuminated = false, tgtIntensity = 0, tgtAlpha = 0;
-const lerpSpeed = 0.05;
-let blinkTimer = 0, blinkVis = true;
-const blinkRate = 0.5;
-
-// UI
-const inputDiv = document.createElement('div');
-Object.assign(inputDiv.style,{position:'absolute',bottom:'20%',left:'50%',transform:'translateX(-50%)',display:'none',
-  fontFamily:'monospace',color:'#00ffff',fontSize:'24px',background:'rgba(0,0,0,0.5)',padding:'10px',
-  border:'1px solid #00ffff',borderRadius:'5px',flexDirection:'row',alignItems:'center',zIndex:10});
-const input = document.createElement('input');
-Object.assign(input.style,{background:'transparent',border:'none',color:'#00ffff',fontSize:'inherit',outline:'none',flex:1});
-input.type = 'text'; input.placeholder = 'Ask Grok anything...';
-const micBtn = document.createElement('button'); micBtn.textContent='🎤';
-Object.assign(micBtn.style,{background:'transparent',border:'none',color:'#00ffff',fontSize:'24px',cursor:'pointer',marginLeft:'10px'});
-inputDiv.appendChild(input); inputDiv.appendChild(micBtn); document.body.appendChild(inputDiv);
-
-const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recog;
-if (Speech) {
-  recog = new Speech(); recog.continuous=false; recog.interimResults=false; recog.lang='en-US';
-  micBtn.onclick = () => { recog.start(); micBtn.textContent='🔴'; };
-  recog.onresult = e => { input.value = e.results[0][0].transcript; micBtn.textContent='🎤'; };
-  recog.onend = () => micBtn.textContent='🎤';
-  recog.onerror = e => { console.error(e); micBtn.textContent='🎤'; };
-} else { micBtn.disabled=true; micBtn.textContent='❌'; }
-
-async function askGrok(prompt) {
-  const apiKey = 'YOUR_XAI_API_KEY_HERE'; // ← Replace with real key from https://console.x.ai
-  if (!apiKey || apiKey === 'YOUR_XAI_API_KEY_HERE') {
-    addResponseText("Please set a valid xAI API key in the code first.");
-    return;
-  }
-
-  input.placeholder = 'Grok is thinking...'; input.disabled = true;
-
-  try {
-    const res = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'grok-beta', 
-        messages: [{ role: 'user', content: prompt }],
-        stream: true
-      })
-    });
-
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
-
-    const reader = res.body.getReader();
-    let fullText = '';
-    while (true) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      const chunk = new TextDecoder().decode(value);
-      const lines = chunk.split('\n');
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (data === '[DONE]') continue;
-          try {
-            const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) {
-              fullText += delta;
-              addResponseText(fullText); // update progressively
-            }
-          } catch {}
-        }
+// Custom shader to auto-mask the black center and blend edges
+const frameMat = new THREE.ShaderMaterial({
+  uniforms: {
+    tDiffuse: { value: frameTex },
+    time: { value: 0 }
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float time;
+    varying vec2 vUv;
+    
+    void main() {
+      vec4 texColor = texture2D(tDiffuse, vUv);
+      
+      // Calculate distance from center of the image (0.5, 0.5)
+      float dist = distance(vUv, vec2(0.5));
+      
+      // Discard the center pixels to create the hole for the video
+      // Note: Adjust 0.26 if the hole is too big or too small
+      if(dist < 0.26) {
+        discard;
       }
+      
+      // Optional pulse effect on the neon runes based on color intensity
+      float pulse = 1.0 + sin(time * 2.0) * 0.1;
+      if (texColor.r > 0.2 || texColor.b > 0.2) {
+          texColor.rgb *= pulse;
+      }
+
+      // Fade out the hard square edges of the JPEG into the black void
+      float edgeFade = smoothstep(0.5, 0.45, dist);
+      
+      gl_FragColor = vec4(texColor.rgb * edgeFade, 1.0);
     }
-    input.placeholder = 'Ask Grok anything...';
-    input.disabled = false;
-  } catch (err) {
-    addResponseText(`Error: ${err.message}`);
-    input.placeholder = 'Ask Grok anything...';
-    input.disabled = false;
-  }
-}
-
-let responseMeshes = [];
-function addResponseText(text) {
-  // Remove old response meshes
-  responseMeshes.forEach(mesh => scene.remove(mesh));
-  responseMeshes = [];
-
-  if (!globalFont) {
-    console.warn("Font not loaded yet – cannot create response text");
-    return;
-  }
-
-  const lines = text.match(/.{1,30}/g) || []; // Simple word wrap to \~30 chars per line
-  lines.forEach((line, i) => {
-    const geo = new TextGeometry(line, {font: globalFont, size:0.3, height:0.05});
-    const mat = new THREE.MeshBasicMaterial({color:0x88ffff, transparent:true, opacity:0.9});
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(-2.5, 1 - i*0.4, -4.8);
-    mesh.rotation.y = Math.PI / 16; // Slight tilt
-    scene.add(mesh);
-    responseMeshes.push(mesh);
-  });
-}
-
-input.addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
-    const p = input.value.trim();
-    if (p) {
-      askGrok(p);
-      input.value = '';
-    }
-  }
+  `,
+  transparent: true,
+  side: THREE.DoubleSide
 });
 
-// Click logic (raycaster)
-const ray = new THREE.Raycaster();
-const ptr = new THREE.Vector2();
-renderer.domElement.addEventListener('click', e => {
-  ptr.x = (e.clientX / window.innerWidth)*2 -1;
-  ptr.y = -(e.clientY / window.innerHeight)*2 +1;
-  ray.setFromCamera(ptr, camera);
-  const hits = ray.intersectObject(mirror);
-  if (hits.length > 0) {
-    storesModal.style.display = 'block';
-  } else {
-    illuminated = !illuminated;
-    tgtIntensity = illuminated ? 1.5 : 0;
-    tgtAlpha = illuminated ? 1 : 0;
-    inputDiv.style.display = illuminated ? 'flex' : 'none';
-    if (promptText) promptText.material.opacity = tgtAlpha;
-    if (cursor) cursor.material.opacity = tgtAlpha;
-    if (illuminated) {
-      input.focus();
-      startCamera();
-      captureDiv.style.display = 'flex';
-    } else {
-      stopCamera();
-      captureDiv.style.display = 'none';
-      storesModal.style.display = 'none';
-    }
-  }
-});
+const frameGeo = new THREE.PlaneGeometry(12, 12);
+const frameMesh = new THREE.Mesh(frameGeo, frameMat);
+frameMesh.position.set(0, 5, -5.0); // Placed slightly in front of the video
+scene.add(frameMesh);
 
-// Webcam (same as before)
-let vid, vidTex, bgPl, stream, rec, chunks=[], recing=false;
-async function startCamera() {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({video:true});
-    vid = document.createElement('video');
-    vid.srcObject = stream; vid.muted=true; await vid.play();
-    vidTex = new THREE.VideoTexture(vid);
-    vidTex.minFilter = THREE.LinearFilter; vidTex.magFilter = THREE.LinearFilter;
-    const g = new THREE.PlaneGeometry(80,60);
-    const m = new THREE.MeshBasicMaterial({map:vidTex, side:THREE.BackSide});
-    bgPl = new THREE.Mesh(g,m);
-    bgPl.position.set(0,5,-25); bgPl.scale.x = -1;
-    scene.add(bgPl);
-  } catch(e){console.error(e);}
-}
-function stopCamera() {
-  if(stream) stream.getTracks().forEach(t=>t.stop());
-  if(bgPl) scene.remove(bgPl);
-  if(vid){vid.pause(); vid.srcObject=null;}
-}
 
-// Capture UI (same)
-const captureDiv = document.createElement('div');
-Object.assign(captureDiv.style,{position:'absolute',top:'50%',right:'20px',transform:'translateY(-50%)',display:'none',
-  flexDirection:'column',gap:'12px',zIndex:10});
-const photoB = document.createElement('button'); photoB.textContent='Take Photo';
-Object.assign(photoB.style,{background:'rgba(0,0,0,0.6)',border:'1px solid #00ffff',color:'#00ffff',padding:'12px 24px',cursor:'pointer'});
-const vidB = document.createElement('button'); vidB.textContent='Record Video';
-Object.assign(vidB.style,{...photoB.style});
-captureDiv.append(photoB,vidB); document.body.appendChild(captureDiv);
+// ────────────────────────────────────────────────
+// Lighting & Objects
+// ────────────────────────────────────────────────
+const ambient = new THREE.AmbientLight(0xffffff, 0.1); 
+scene.add(ambient);
 
-photoB.onclick=()=>{if(!vid)return; const c=document.createElement('canvas');c.width=vid.videoWidth;c.height=vid.videoHeight;
-  c.getContext('2d').drawImage(vid,0,0); const a=document.createElement('a');a.download=`mirror-${Date.now()}.png`;
-  a.href=c.toDataURL('image/png');a.click();};
-
-vidB.onclick=()=>{if(!stream)return;
-  if(!recing){rec=new MediaRecorder(stream);rec.ondataavailable=e=>chunks.push(e.data);
-    rec.onstop=()=>{const b=new Blob(chunks,{type:'video/webm'});const u=URL.createObjectURL(b);
-      const a=document.createElement('a');a.download=`mirror-video-${Date.now()}.webm`;a.href=u;a.click();chunks=[];};
-    rec.start(); recing=true; vidB.textContent='■ Stop';}
-  else{rec.stop();recing=false;vidB.textContent='Record Video';}};
-
-// Stores modal
-const storesModal = document.createElement('div');
-Object.assign(storesModal.style,{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
-  background:'rgba(0,20,40,0.88)',color:'#00ffff',padding:'30px',border:'2px solid #00ffff',borderRadius:'10px',
-  maxWidth:'640px',width:'85%',display:'none',fontSize:'18px',backdropFilter:'blur(8px)',zIndex:1000});
-storesModal.innerHTML = `
-  <h2 style="margin:0 0 20px; text-align:center;">Smart Mirror Vendors 2026</h2>
-  <p>Explore places to buy smart/magic/interactive mirrors:</p>
-  <ul style="list-style:none; padding:0;">
-    <li>→ <a href="https://verconsmartmirror.com/" target="_blank" style="color:#00ffff;">Vercon Smart Mirror</a> – Innovative smart mirrors with health monitoring</li>
-    <li>→ <a href="https://mues-tec.com/" target="_blank" style="color:#00ffff;">MUES-TEC</a> – Smart makeup mirrors for salons and spas</li>
-    <li>→ <a href="https://electricmirror.com/" target="_blank" style="color:#00ffff;">Electric Mirror</a> – Luxury lighted and smart mirrors</li>
-    <li>→ <a href="https://www.seura.com/" target="_blank" style="color:#00ffff;">Séura</a> – High-end mirror TVs and smart mirrors</li>
-    <li>→ <a href="https://prodisplay.com/" target="_blank" style="color:#00ffff;">Pro Display</a> – Interactive smart mirror displays</li>
-    <li>→ <a href="https://www.himirror.com/" target="_blank" style="color:#00ffff;">HiMirror</a> – Beauty and skincare smart mirrors</li>
-    <li>→ <a href="https://www.gentex.com/" target="_blank" style="color:#00ffff;">Gentex Corporation</a> – Automotive and home smart mirrors</li>
-    <li>→ <a href="https://www.magna.com/" target="_blank" style="color:#00ffff;">Magna International</a> – Advanced smart mirror solutions</li>
-  </ul>
-  <button id="cls" style="margin-top:20px; padding:10px 20px; background:transparent; border:1px solid #00ffff; color:#00ffff; cursor:pointer; font-size:18px; display:block; margin:20px auto;">Close</button>
-`;
-document.body.appendChild(storesModal);
-document.getElementById('cls').addEventListener('click', () => storesModal.style.display = 'none');
-
-// Resize + Animate (same as before)
+// ────────────────────────────────────────────────
+// Resize + Animate
+// ────────────────────────────────────────────────
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight);
-  mirror.getRenderTarget().setSize(window.innerWidth * window.devicePixelRatio, window.innerHeight * window.devicePixelRatio);
+  camera.aspect = window.innerWidth / window.innerHeight; 
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight); 
+  composer.setSize(window.innerWidth, window.innerHeight);
 });
 
-let t0 = 0;
-function loop(t=0) {
+const clock = new THREE.Clock();
+
+function loop() {
   requestAnimationFrame(loop);
-  const dt = (t - t0)/1000; t0 = t;
-  box.rotation.y += 0.01;
-  holoMat.uniforms.time.value += 0.05;
-  scanlineShader.uniforms.time.value += 0.05;
-  light.intensity = THREE.MathUtils.lerp(light.intensity, tgtIntensity, lerpSpeed);
-  holoMat.uniforms.alpha.value = THREE.MathUtils.lerp(holoMat.uniforms.alpha.value, tgtAlpha, lerpSpeed);
-  if (illuminated && cursor) {
-    blinkTimer += dt;
-    if (blinkTimer >= blinkRate) { blinkVis = !blinkVis; cursor.visible = blinkVis; blinkTimer -= blinkRate; }
+  
+  const delta = clock.getDelta();
+  const elapsedTime = clock.getElapsedTime();
+  
+  // Pass time to frame shader for neon pulse
+  frameMat.uniforms.time.value = elapsedTime;
+  
+  // Update video texture
+  if (video.readyState >= video.HAVE_CURRENT_DATA) {
+    videoTex.needsUpdate = true;
   }
-  if (vidTex) vidTex.needsUpdate = true;
-  renderer.clear(); // Critical: Clear before render
+  
+  renderer.clear();
   composer.render();
 }
+
+// Click listener to trigger video (browsers require interaction to un-mute or play unmuted audio if needed later)
+window.addEventListener('click', () => {
+    if(video.paused) {
+        video.play();
+    }
+});
+
 loop();
 
-window.addEventListener('beforeunload', stopCamera);
 </script>
 </body>
 </html>
