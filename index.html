@@ -25,7 +25,6 @@ import { EffectComposer } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examp
 import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/UnrealBloomPass.js';
 
-// Scene Setup
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x010103); 
 
@@ -41,13 +40,10 @@ renderer.toneMappingExposure = 1.1;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
-// Post-processing
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.25, 0.6, 0.35);
-composer.addPass(bloomPass);
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.25, 0.6, 0.35));
 
-// Controls
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.04;
@@ -56,153 +52,144 @@ controls.target.set(0, 15, 0);
 controls.maxPolarAngle = Math.PI / 2 + 0.05; 
 
 const uiLayer = document.getElementById('ui-layer');
-const manager = new THREE.LoadingManager();
-manager.onLoad = () => uiLayer.innerText = 'SYSTEM_ONLINE // Drag to rotate • Pinch to zoom';
-const textureLoader = new THREE.TextureLoader(manager);
 
-// Textures (All Updated)
-const floorTex = textureLoader.load('https://files.catbox.moe/6xph8n.JPEG');
-const innerDomeTex = textureLoader.load('https://files.catbox.moe/vpvm1x.JPEG');   // ← New Inner Dome
-const outerDomeTex = textureLoader.load('https://files.catbox.moe/vhffm6.JPEG');   // ← New Outer Dome
-const frameTex = textureLoader.load('https://files.catbox.moe/98i4rp.jpeg');
+// Force progress after 4 seconds even if some assets fail
+setTimeout(() => {
+  uiLayer.innerText = 'SYSTEM_ONLINE // Drag to rotate • Pinch to zoom';
+  uiLayer.style.color = '#00ffaa';
+}, 4000);
 
-floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
-floorTex.repeat.set(4, 4);
+const textureLoader = new THREE.TextureLoader();
 
-// Floor
-const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(1000, 1000),
-  new THREE.MeshStandardMaterial({ 
-    map: floorTex, 
+// Load textures with individual error handling
+const textures = {
+  floor: 'https://files.catbox.moe/6xph8n.JPEG',
+  innerDome: 'https://files.catbox.moe/vpvm1x.JPEG',
+  outerDome: 'https://files.catbox.moe/vhffm6.JPEG',
+  frame: 'https://files.catbox.moe/98i4rp.jpeg'
+};
+
+const loadedTextures = {};
+
+Object.keys(textures).forEach(key => {
+  textureLoader.load(
+    textures[key],
+    tex => { 
+      loadedTextures[key] = tex;
+      if (key === 'floor') {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(4, 4);
+      }
+      console.log(`✅ Loaded: ${key}`);
+    },
+    undefined,
+    err => {
+      console.error(`❌ Failed to load ${key}:`, err);
+      uiLayer.innerText = `WARNING // Failed to load ${key}`;
+      uiLayer.style.color = '#ffaa00';
+    }
+  );
+});
+
+// Create scene objects (will use textures once loaded)
+function createScene() {
+  // Floor
+  const floorMat = new THREE.MeshStandardMaterial({ 
+    map: loadedTextures.floor || null, 
     emissive: 0xffffff,
-    emissiveMap: floorTex,
     emissiveIntensity: 0.3, 
     roughness: 0.85
-  })
-);
-floor.rotation.x = -Math.PI / 2;
-scene.add(floor);
+  });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  scene.add(floor);
 
-// Inner Dome
-scene.add(new THREE.Mesh(
-  new THREE.SphereGeometry(100, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2),
-  new THREE.MeshStandardMaterial({ 
-    map: innerDomeTex, 
-    emissive: 0xffffff,
-    emissiveMap: innerDomeTex,
-    emissiveIntensity: 0.35,
-    side: THREE.BackSide 
-  })
-));
+  // Inner Dome
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(100, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({ 
+      map: loadedTextures.innerDome, 
+      emissive: 0xffffff,
+      emissiveIntensity: 0.35,
+      side: THREE.BackSide 
+    })
+  ));
 
-// Outer Dome
-scene.add(new THREE.Mesh(
-  new THREE.SphereGeometry(102, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2),
-  new THREE.MeshStandardMaterial({ 
-    map: outerDomeTex, 
-    emissive: 0xffffff,
-    emissiveMap: outerDomeTex,
-    emissiveIntensity: 0.5,
-    side: THREE.FrontSide 
-  })
-));
+  // Outer Dome
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(102, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({ 
+      map: loadedTextures.outerDome, 
+      emissive: 0xffffff,
+      emissiveIntensity: 0.5,
+      side: THREE.FrontSide 
+    })
+  ));
 
-// Vortex Mirror
-const mirrorGroup = new THREE.Group();
+  // Mirror Group
+  const mirrorGroup = new THREE.Group();
 
-// Video inside the mirror
-const video = document.createElement('video');
-video.src = 'https://files.catbox.moe/4ab3h5.mp4';
-video.loop = true;
-video.muted = true;
-video.playsInline = true;
-video.crossOrigin = "anonymous";
-video.play().catch(() => {});
+  // Video
+  const video = document.createElement('video');
+  video.src = 'https://files.catbox.moe/4ab3h5.mp4';
+  video.loop = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.play();
 
-const videoTex = new THREE.VideoTexture(video);
-videoTex.colorSpace = THREE.SRGBColorSpace;
+  const videoTex = new THREE.VideoTexture(video);
+  const videoMesh = new THREE.Mesh(new THREE.CircleGeometry(3.3, 64), new THREE.MeshBasicMaterial({ map: videoTex }));
+  videoMesh.position.set(0, 0, -0.15);
+  mirrorGroup.add(videoMesh);
 
-const videoMesh = new THREE.Mesh(
-  new THREE.CircleGeometry(3.3, 64),
-  new THREE.MeshBasicMaterial({ map: videoTex })
-);
-videoMesh.position.set(0, 0, -0.15);
-mirrorGroup.add(videoMesh);
-
-// Frame
-const frameMat = new THREE.ShaderMaterial({
-  uniforms: { 
-    tDiffuse: { value: frameTex }, 
-    time: { value: 0 } 
-  },
-  vertexShader: `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    uniform sampler2D tDiffuse;
-    uniform float time;
-    varying vec2 vUv;
-    void main() {
-      vec4 texColor = texture2D(tDiffuse, vUv);
-      float dist = distance(vUv, vec2(0.5));
-      if(dist < 0.262) discard; // Hole for video
-      
-      float pulse = 1.0 + sin(time * 1.5) * 0.25; 
-      if (texColor.r > 0.12 || texColor.b > 0.12) {
-          texColor.rgb *= pulse;
+  // Frame
+  const frameMat = new THREE.ShaderMaterial({
+    uniforms: { tDiffuse: { value: loadedTextures.frame }, time: { value: 0 } },
+    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      uniform sampler2D tDiffuse; uniform float time; varying vec2 vUv;
+      void main() {
+        vec4 texColor = texture2D(tDiffuse, vUv);
+        float dist = distance(vUv, vec2(0.5));
+        if(dist < 0.262) discard;
+        float pulse = 1.0 + sin(time * 1.5) * 0.25; 
+        if (texColor.r > 0.12 || texColor.b > 0.12) texColor.rgb *= pulse;
+        float edgeFade = smoothstep(0.5, 0.44, dist); 
+        gl_FragColor = vec4(texColor.rgb * edgeFade, 1.0);
       }
-      
-      float edgeFade = smoothstep(0.5, 0.44, dist); 
-      gl_FragColor = vec4(texColor.rgb * edgeFade, 1.0);
-    }
-  `,
-  transparent: true,
-  side: THREE.DoubleSide
-});
+    `,
+    transparent: true,
+    side: THREE.DoubleSide
+  });
 
-const frameMesh = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), frameMat);
-mirrorGroup.add(frameMesh);
+  mirrorGroup.add(new THREE.Mesh(new THREE.PlaneGeometry(12, 12), frameMat));
+  mirrorGroup.position.set(0, 0, -14);
+  camera.add(mirrorGroup);
 
-mirrorGroup.position.set(0, 0, -14);
-camera.add(mirrorGroup);
+  // Lighting
+  scene.add(new THREE.AmbientLight(0xffffff, 0.15));
+  scene.add(new THREE.PointLight(0x00ffff, 60, 150).position.set(-20, 30, 20));
+  scene.add(new THREE.PointLight(0xaa00ff, 60, 150).position.set(20, 30, -20));
+  scene.add(new THREE.DirectionalLight(0x4466ff, 1.2));
 
-// Lighting
-scene.add(new THREE.AmbientLight(0xffffff, 0.15));
-scene.add(new THREE.PointLight(0x00ffff, 60, 150).position.set(-20, 30, 20));
-scene.add(new THREE.PointLight(0xaa00ff, 60, 150).position.set(20, 30, -20));
-scene.add(new THREE.DirectionalLight(0x4466ff, 1.2));
-
-// Resize Handler
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
-});
-
-const clock = new THREE.Clock();
-
-function loop() {
-  requestAnimationFrame(loop);
-  const t = clock.getElapsedTime();
-
-  controls.update();
-  frameMat.uniforms.time.value = t;
-
-  mirrorGroup.position.y = Math.sin(t * 1.2) * 0.35;
-  mirrorGroup.rotation.x = Math.sin(t * 0.8) * 0.02;
-  mirrorGroup.rotation.y = Math.cos(t * 0.9) * 0.02;
-
-  if (video.readyState >= 2) videoTex.needsUpdate = true;
-
-  composer.render();
+  // Animation Loop
+  const clock = new THREE.Clock();
+  function loop() {
+    requestAnimationFrame(loop);
+    const t = clock.getElapsedTime();
+    controls.update();
+    frameMat.uniforms.time.value = t;
+    mirrorGroup.position.y = Math.sin(t * 1.2) * 0.35;
+    mirrorGroup.rotation.x = Math.sin(t * 0.8) * 0.02;
+    mirrorGroup.rotation.y = Math.cos(t * 0.9) * 0.02;
+    if (video.readyState >= 2) videoTex.needsUpdate = true;
+    composer.render();
+  }
+  loop();
 }
 
-loop();
+// Start scene after short delay (gives textures time to start loading)
+setTimeout(createScene, 800);
 </script>
 </body>
 </html>
