@@ -3,19 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Olympus By Merlin – Emissive Dome & Mirror</title>
+  <title>Olympus By Merlin – The Vortex Mirror</title>
   <style>
-    body { margin: 0; overflow: hidden; background: black; font-family: monospace; }
+    body { margin: 0; overflow: hidden; background: #010103; font-family: monospace; }
     canvas { display: block; outline: none; }
     #ui-layer {
       position: absolute; top: 20px; left: 20px; color: #00ffff;
-      text-shadow: 0 0 5px #00ffff; pointer-events: none; z-index: 100;
+      text-shadow: 0 0 8px rgba(0, 255, 255, 0.6); pointer-events: none; z-index: 100;
+      letter-spacing: 1px; font-size: 14px;
     }
   </style>
 </head>
 <body>
 
-<div id="ui-layer">Swipe to look around. Scroll/Pinch to zoom in/out.</div>
+<div id="ui-layer">SYSTEM_ONLINE // Swipe to rotate. Pinch to scale.</div>
 
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js';
@@ -25,43 +26,43 @@ import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/
 import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 // ────────────────────────────────────────────────
-// Scene & Camera Setup
+// Scene & Renderer Precision Setup
 // ────────────────────────────────────────────────
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x020205); // Deep, dark atmospheric base
+scene.background = new THREE.Color(0x010103); 
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 3000);
 camera.position.set(0, 10, 30); 
 scene.add(camera);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
 renderer.setSize(window.innerWidth, window.innerHeight);
-// Add ACESFilmic tone mapping to prevent bright colors from washing out to pure white
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap pixel ratio for performance
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
+renderer.toneMappingExposure = 1.1; 
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
-// Post-processing: Global Bloom
+// Post-processing: Synthwave Bloom
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-// Tuned bloom: higher threshold so only the bright/neon parts of the JPEGs glow heavily
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.2, 0.5, 0.4);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.25, 0.6, 0.35);
 composer.addPass(bloomPass);
 
 // ────────────────────────────────────────────────
-// Camera Controls
+// Camera Controls (Locked & Fluid)
 // ────────────────────────────────────────────────
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.dampingFactor = 0.05;
-controls.enablePan = true;
+controls.dampingFactor = 0.04;
+controls.enablePan = false; // Disabled panning to keep user centered in the dome
 controls.target.set(0, 15, 0);
-controls.maxPolarAngle = Math.PI / 2 + 0.1; 
+controls.maxPolarAngle = Math.PI / 2 + 0.05; // Prevent breaking through the floor
 controls.maxDistance = 800; 
-controls.minDistance = 2;
+controls.minDistance = 1;
 
 // ────────────────────────────────────────────────
-// Environment Wrapping (Emissive Setup)
+// Environment Wrapping 
 // ────────────────────────────────────────────────
 const textureLoader = new THREE.TextureLoader();
 
@@ -76,16 +77,14 @@ const outerDomeTex = textureLoader.load('assets/Outer dome wrap.JPEG');
 });
 floorTex.repeat.set(4, 4);
 
-// By setting emissiveMap to the texture itself, the image acts as its own light source.
-// Adjust emissiveIntensity (0.0 to 1.0) if it is too dim or too blown out.
 const floorGeo = new THREE.PlaneGeometry(1000, 1000);
 const floorMat = new THREE.MeshStandardMaterial({ 
     map: floorTex, 
     emissive: 0xffffff,
     emissiveMap: floorTex,
-    emissiveIntensity: 0.35, 
-    roughness: 0.8,
-    metalness: 0.2
+    emissiveIntensity: 0.25, 
+    roughness: 0.9,
+    metalness: 0.1
 });
 const floor = new THREE.Mesh(floorGeo, floorMat);
 floor.rotation.x = -Math.PI / 2;
@@ -96,9 +95,9 @@ const innerDomeMat = new THREE.MeshStandardMaterial({
     map: innerDomeTex, 
     emissive: 0xffffff,
     emissiveMap: innerDomeTex,
-    emissiveIntensity: 0.4,
+    emissiveIntensity: 0.35,
     side: THREE.BackSide, 
-    roughness: 0.6 
+    roughness: 0.8 
 });
 const innerDome = new THREE.Mesh(innerDomeGeo, innerDomeMat);
 scene.add(innerDome);
@@ -108,15 +107,15 @@ const outerDomeMat = new THREE.MeshStandardMaterial({
     map: outerDomeTex, 
     emissive: 0xffffff,
     emissiveMap: outerDomeTex,
-    emissiveIntensity: 0.6, // Slightly brighter for visibility when zoomed out
+    emissiveIntensity: 0.5, 
     side: THREE.FrontSide, 
-    roughness: 0.8
+    roughness: 0.9
 });
 const outerDome = new THREE.Mesh(outerDomeGeo, outerDomeMat);
 scene.add(outerDome);
 
 // ────────────────────────────────────────────────
-// The Hovering Magic Mirror (Parented to Camera)
+// The Hovering Magic Mirror (Camera Tracking)
 // ────────────────────────────────────────────────
 const mirrorGroup = new THREE.Group();
 
@@ -130,11 +129,13 @@ video.play();
 
 const videoTex = new THREE.VideoTexture(video);
 videoTex.colorSpace = THREE.SRGBColorSpace;
+videoTex.minFilter = THREE.LinearFilter;
+videoTex.magFilter = THREE.LinearFilter;
 
 const vidGeo = new THREE.CircleGeometry(3.3, 64);
 const vidMat = new THREE.MeshBasicMaterial({ map: videoTex });
 const videoMesh = new THREE.Mesh(vidGeo, vidMat);
-videoMesh.position.set(0, 0, -0.1); 
+videoMesh.position.set(0, 0, -0.15); // Pushed further back to prevent z-fighting
 mirrorGroup.add(videoMesh);
 
 const frameTex = textureLoader.load('assets/IMG_1488.jpeg');
@@ -155,14 +156,14 @@ const frameMat = new THREE.ShaderMaterial({
       vec4 texColor = texture2D(tDiffuse, vUv);
       float dist = distance(vUv, vec2(0.5));
       
-      if(dist < 0.26) discard;
+      if(dist < 0.262) discard; // Tightly mapped to the rune inner lip
       
-      float pulse = 1.0 + sin(time * 2.0) * 0.2; // Increased pulse intensity slightly
-      if (texColor.r > 0.2 || texColor.b > 0.2) {
+      float pulse = 1.0 + sin(time * 1.5) * 0.25; 
+      if (texColor.r > 0.15 || texColor.b > 0.15) {
           texColor.rgb *= pulse;
       }
       
-      float edgeFade = smoothstep(0.5, 0.45, dist);
+      float edgeFade = smoothstep(0.5, 0.44, dist); // Smoother outer blend
       gl_FragColor = vec4(texColor.rgb * edgeFade, 1.0);
     }
   `,
@@ -175,27 +176,25 @@ const frameMesh = new THREE.Mesh(frameGeo, frameMat);
 frameMesh.position.set(0, 0, 0); 
 mirrorGroup.add(frameMesh);
 
-mirrorGroup.position.set(0, 0, -15);
+// Base position in front of camera
+mirrorGroup.position.set(0, 0, -14);
 camera.add(mirrorGroup);
 
 // ────────────────────────────────────────────────
-// Lighting (Atmospheric Fill)
+// Cinematic Lighting
 // ────────────────────────────────────────────────
-// A soft base ambient light
-const ambient = new THREE.AmbientLight(0xffffff, 0.2); 
+const ambient = new THREE.AmbientLight(0xffffff, 0.1); 
 scene.add(ambient);
 
-// Cyan and Magenta point lights inside to bounce off the non-emissive roughness of the textures
-const cyanLight = new THREE.PointLight(0x00ffff, 40, 150);
-cyanLight.position.set(-30, 20, 30);
+const cyanLight = new THREE.PointLight(0x00ffff, 60, 150);
+cyanLight.position.set(-20, 30, 20);
 scene.add(cyanLight);
 
-const magentaLight = new THREE.PointLight(0xff00ff, 40, 150);
-magentaLight.position.set(30, 20, -30);
+const magentaLight = new THREE.PointLight(0xaa00ff, 60, 150);
+magentaLight.position.set(20, 30, -20);
 scene.add(magentaLight);
 
-// Outer directional light for the exterior dome
-const directionalLight = new THREE.DirectionalLight(0xaabbff, 1.5);
+const directionalLight = new THREE.DirectionalLight(0x4466ff, 1.2);
 directionalLight.position.set(100, 200, 100);
 scene.add(directionalLight);
 
@@ -209,8 +208,11 @@ window.addEventListener('resize', () => {
   composer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// Autoplay bypass for strict browsers
 window.addEventListener('pointerdown', () => {
     if(video.paused) video.play();
+    document.getElementById('ui-layer').style.opacity = 0; // Hide UI on first click
+    document.getElementById('ui-layer').style.transition = 'opacity 1s ease-out';
 }, { once: true });
 
 const clock = new THREE.Clock();
@@ -221,10 +223,12 @@ function loop() {
   const elapsedTime = clock.getElapsedTime();
   
   controls.update();
-
   frameMat.uniforms.time.value = elapsedTime;
   
-  mirrorGroup.position.y = Math.sin(elapsedTime * 1.5) * 0.4;
+  // Organic, breathing hover effect for the mirror
+  mirrorGroup.position.y = Math.sin(elapsedTime * 1.2) * 0.35;
+  mirrorGroup.rotation.x = Math.sin(elapsedTime * 0.8) * 0.02; // Subtle pitch
+  mirrorGroup.rotation.y = Math.cos(elapsedTime * 0.9) * 0.02; // Subtle yaw
   
   if (video.readyState >= video.HAVE_CURRENT_DATA) {
     videoTex.needsUpdate = true;
