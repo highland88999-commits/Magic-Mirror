@@ -16,7 +16,7 @@
 </head>
 <body>
 
-<div id="ui-layer">SYSTEM_ONLINE // Swipe to rotate. Pinch to scale.</div>
+<div id="ui-layer">SYSTEM_INITIALIZING // Awaiting assets...</div>
 
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js';
@@ -26,7 +26,7 @@ import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/
 import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 // ────────────────────────────────────────────────
-// Scene & Renderer Precision Setup
+// Scene & Renderer Setup
 // ────────────────────────────────────────────────
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x010103); 
@@ -37,7 +37,7 @@ scene.add(camera);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap pixel ratio for performance
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1; 
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -55,20 +55,42 @@ composer.addPass(bloomPass);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.04;
-controls.enablePan = false; // Disabled panning to keep user centered in the dome
+controls.enablePan = false; 
 controls.target.set(0, 15, 0);
-controls.maxPolarAngle = Math.PI / 2 + 0.05; // Prevent breaking through the floor
+controls.maxPolarAngle = Math.PI / 2 + 0.05; 
 controls.maxDistance = 800; 
 controls.minDistance = 1;
 
 // ────────────────────────────────────────────────
+// Asset Loading Manager (Finds the broken files)
+// ────────────────────────────────────────────────
+const uiLayer = document.getElementById('ui-layer');
+const manager = new THREE.LoadingManager();
+
+manager.onStart = function (url, itemsLoaded, itemsTotal) {
+    uiLayer.innerText = `SYSTEM_LOADING // ${Math.round((itemsLoaded / itemsTotal) * 100)}%`;
+};
+
+manager.onLoad = function () {
+    uiLayer.innerText = 'SYSTEM_ONLINE // Swipe to rotate. Pinch to scale. Tap to initialize sequence.';
+};
+
+manager.onError = function (url) {
+    // If a file 404s, this will print the exact broken path to your screen
+    uiLayer.innerText = `ERROR // Failed to load: ${url}`;
+    uiLayer.style.color = "#ff0044"; 
+};
+
+const textureLoader = new THREE.TextureLoader(manager);
+
+// ────────────────────────────────────────────────
 // Environment Wrapping 
 // ────────────────────────────────────────────────
-const textureLoader = new THREE.TextureLoader();
-
-const floorTex = textureLoader.load('assets/Floor wrap.JPEG');
-const innerDomeTex = textureLoader.load('assets/Inner dome wrap.JPEG');
-const outerDomeTex = textureLoader.load('assets/Outer dome wrap.JPEG');
+// encodeURI safely handles the spaces in your file names for web routing
+const floorTex = textureLoader.load(encodeURI('assets/Floor wrap.JPEG'));
+const innerDomeTex = textureLoader.load(encodeURI('assets/Inner dome wrap.JPEG'));
+const outerDomeTex = textureLoader.load(encodeURI('assets/Outer dome wrap.JPEG'));
+const frameTex = textureLoader.load(encodeURI('assets/IMG_1488.jpeg'));
 
 [floorTex, innerDomeTex, outerDomeTex].forEach(tex => {
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -123,7 +145,7 @@ const video = document.createElement('video');
 video.src = 'assets/gemini_generated_video_763BE1F0.mp4';
 video.loop = true;
 video.muted = true; 
-video.playsInline = true;
+video.playsInline = true; // Critical for mobile iOS
 video.crossOrigin = "anonymous";
 video.play();
 
@@ -135,10 +157,9 @@ videoTex.magFilter = THREE.LinearFilter;
 const vidGeo = new THREE.CircleGeometry(3.3, 64);
 const vidMat = new THREE.MeshBasicMaterial({ map: videoTex });
 const videoMesh = new THREE.Mesh(vidGeo, vidMat);
-videoMesh.position.set(0, 0, -0.15); // Pushed further back to prevent z-fighting
+videoMesh.position.set(0, 0, -0.15); 
 mirrorGroup.add(videoMesh);
 
-const frameTex = textureLoader.load('assets/IMG_1488.jpeg');
 const frameMat = new THREE.ShaderMaterial({
   uniforms: { tDiffuse: { value: frameTex }, time: { value: 0 } },
   vertexShader: `
@@ -156,14 +177,14 @@ const frameMat = new THREE.ShaderMaterial({
       vec4 texColor = texture2D(tDiffuse, vUv);
       float dist = distance(vUv, vec2(0.5));
       
-      if(dist < 0.262) discard; // Tightly mapped to the rune inner lip
+      if(dist < 0.262) discard; 
       
       float pulse = 1.0 + sin(time * 1.5) * 0.25; 
       if (texColor.r > 0.15 || texColor.b > 0.15) {
           texColor.rgb *= pulse;
       }
       
-      float edgeFade = smoothstep(0.5, 0.44, dist); // Smoother outer blend
+      float edgeFade = smoothstep(0.5, 0.44, dist); 
       gl_FragColor = vec4(texColor.rgb * edgeFade, 1.0);
     }
   `,
@@ -176,7 +197,6 @@ const frameMesh = new THREE.Mesh(frameGeo, frameMat);
 frameMesh.position.set(0, 0, 0); 
 mirrorGroup.add(frameMesh);
 
-// Base position in front of camera
 mirrorGroup.position.set(0, 0, -14);
 camera.add(mirrorGroup);
 
@@ -208,11 +228,11 @@ window.addEventListener('resize', () => {
   composer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Autoplay bypass for strict browsers
+// Autoplay bypass for mobile browsers
 window.addEventListener('pointerdown', () => {
     if(video.paused) video.play();
-    document.getElementById('ui-layer').style.opacity = 0; // Hide UI on first click
-    document.getElementById('ui-layer').style.transition = 'opacity 1s ease-out';
+    uiLayer.style.opacity = 0; 
+    uiLayer.style.transition = 'opacity 1s ease-out';
 }, { once: true });
 
 const clock = new THREE.Clock();
@@ -227,8 +247,8 @@ function loop() {
   
   // Organic, breathing hover effect for the mirror
   mirrorGroup.position.y = Math.sin(elapsedTime * 1.2) * 0.35;
-  mirrorGroup.rotation.x = Math.sin(elapsedTime * 0.8) * 0.02; // Subtle pitch
-  mirrorGroup.rotation.y = Math.cos(elapsedTime * 0.9) * 0.02; // Subtle yaw
+  mirrorGroup.rotation.x = Math.sin(elapsedTime * 0.8) * 0.02; 
+  mirrorGroup.rotation.y = Math.cos(elapsedTime * 0.9) * 0.02; 
   
   if (video.readyState >= video.HAVE_CURRENT_DATA) {
     videoTex.needsUpdate = true;
