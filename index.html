@@ -62,7 +62,7 @@ controls.maxDistance = 800;
 controls.minDistance = 1;
 
 // ────────────────────────────────────────────────
-// Asset Loading Manager (Finds the broken files)
+// Asset Loading Manager
 // ────────────────────────────────────────────────
 const uiLayer = document.getElementById('ui-layer');
 const manager = new THREE.LoadingManager();
@@ -76,7 +76,6 @@ manager.onLoad = function () {
 };
 
 manager.onError = function (url) {
-    // If a file 404s, this will print the exact broken path to your screen
     uiLayer.innerText = `ERROR // Failed to load: ${url}`;
     uiLayer.style.color = "#ff0044"; 
 };
@@ -84,9 +83,8 @@ manager.onError = function (url) {
 const textureLoader = new THREE.TextureLoader(manager);
 
 // ────────────────────────────────────────────────
-// Environment Wrapping 
+// Environment Wrapping (Exact GitHub Paths)
 // ────────────────────────────────────────────────
-// encodeURI safely handles the spaces in your file names for web routing
 const floorTex = textureLoader.load(encodeURI('assets/Floor wrap.JPEG'));
 const innerDomeTex = textureLoader.load(encodeURI('assets/Inner dome wrap.JPEG'));
 const outerDomeTex = textureLoader.load(encodeURI('assets/Outer dome wrap.JPEG'));
@@ -142,10 +140,10 @@ scene.add(outerDome);
 const mirrorGroup = new THREE.Group();
 
 const video = document.createElement('video');
-video.src = 'assets/gemini_generated_video_763BE1F0.mp4';
+video.src = encodeURI('assets/gemini_generated_video_763BE1F0.mp4');
 video.loop = true;
 video.muted = true; 
-video.playsInline = true; // Critical for mobile iOS
+video.playsInline = true; 
 video.crossOrigin = "anonymous";
 video.play();
 
