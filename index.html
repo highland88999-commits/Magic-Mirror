@@ -46,7 +46,6 @@
   @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
 </style>
 
-<!-- THE MISSING LINK: The Import Map that fixes the browser crash -->
 <script type="importmap">
   {
     "imports": {
@@ -56,9 +55,7 @@
   }
 </script>
 
-<!-- NATIVE DOM INTERACTION LOGIC -->
 <script>
-  // Diagnostic Error Catcher
   window.onerror = function(msg) {
     document.getElementById('ticker').innerText = 'SYS_ERR: ' + msg;
     document.getElementById('ticker').style.color = '#ff0044';
@@ -70,8 +67,6 @@
   function handleMasterClick() {
     if (appState === 'LANDING') {
       appState = 'OUTSIDE';
-      
-      // CRITICAL: Call the video unlocker attached to the global window object instantly
       if (window.unlockMedia) window.unlockMedia();
 
       document.getElementById('landing-layer').style.opacity = '0';
@@ -82,11 +77,8 @@
 
     } else if (appState === 'OUTSIDE') {
       appState = 'ENTERING';
-      
       document.getElementById('hint-layer').style.opacity = '0';
       document.getElementById('ui-manager').style.display = 'none'; 
-      
-      // Tell the 3D engine to initiate the zoom
       window.dispatchEvent(new Event('initiate-zoom'));
     }
   }
@@ -103,7 +95,6 @@
   <div id="hint-layer">TAP TO ENTER DOME</div>
 </div>
 
-<!-- THE 3D ENGINE -->
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -128,7 +119,8 @@ document.body.appendChild(renderer.domElement);
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.5, 0.3));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.5, 0.3);
+composer.addPass(bloomPass);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enabled = false; 
@@ -154,12 +146,13 @@ const outerDomeTex = loader.load('https://files.catbox.moe/vhffm6.JPEG');
 outerDomeTex.colorSpace = THREE.SRGBColorSpace;
 const frameTex = loader.load('https://files.catbox.moe/98i4rp.jpeg');
 
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshStandardMaterial({ map: floorTex, emissive: 0x112233, emissiveIntensity: 0.25, roughness: 0.9 }));
+// Fixed: Reset emissive to white so true textures show through
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshStandardMaterial({ map: floorTex, emissive: 0xffffff, emissiveIntensity: 0.15, roughness: 0.9 }));
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
-scene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 64, 32, 0, Math.PI*2, 0, Math.PI/2), new THREE.MeshStandardMaterial({ map: innerDomeTex, emissive: 0x00aaff, emissiveIntensity: 0.4, side: THREE.BackSide })));
-scene.add(new THREE.Mesh(new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), new THREE.MeshStandardMaterial({ map: outerDomeTex, emissive: 0xff00aa, emissiveIntensity: 0.55, side: THREE.FrontSide })));
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 64, 32, 0, Math.PI*2, 0, Math.PI/2), new THREE.MeshStandardMaterial({ map: innerDomeTex, emissive: 0xffffff, emissiveIntensity: 0.15, side: THREE.BackSide })));
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), new THREE.MeshStandardMaterial({ map: outerDomeTex, emissive: 0xffffff, emissiveIntensity: 0.25, side: THREE.FrontSide })));
 
 const mirrorGroup = new THREE.Group();
 
@@ -170,7 +163,6 @@ video.playsInline = true;
 video.loop = false;
 video.crossOrigin = 'anonymous';
 
-// Attach media unlock to global scope so the DOM click can trigger it immediately
 window.unlockMedia = () => { video.play().catch(e => console.warn(e)); };
 
 const videoTex = new THREE.VideoTexture(video);
@@ -181,12 +173,17 @@ const videoMesh = new THREE.Mesh(new THREE.CircleGeometry(3.3, 64), videoMat);
 videoMesh.position.set(0, 0, -0.15);
 mirrorGroup.add(videoMesh);
 
+// Fixed: The shader now correctly applies the edge fade to the alpha channel, creating true transparency instead of a black box.
 const frameMat = new THREE.ShaderMaterial({
   uniforms: { tDiffuse: { value: frameTex }, time: { value: 0 }, globalAlpha: { value: 0.0 } },
   vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `uniform sampler2D tDiffuse; uniform float time; uniform float globalAlpha; varying vec2 vUv; void main() { 
-    vec4 c = texture2D(tDiffuse, vUv); float d = distance(vUv, vec2(0.5)); if(d < 0.262) discard; 
-    c.rgb *= (1.0 + sin(time * 1.5) * 0.25); gl_FragColor = vec4(c.rgb * smoothstep(0.5, 0.44, d), globalAlpha); }`,
+    vec4 c = texture2D(tDiffuse, vUv); 
+    float d = distance(vUv, vec2(0.5)); 
+    if(d < 0.262) discard; 
+    c.rgb *= (1.0 + sin(time * 1.5) * 0.25); 
+    float edgeFade = smoothstep(0.5, 0.44, d);
+    gl_FragColor = vec4(c.rgb, globalAlpha * edgeFade); }`,
   transparent: true, side: THREE.DoubleSide
 });
 mirrorGroup.add(new THREE.Mesh(new THREE.PlaneGeometry(12, 12), frameMat));
