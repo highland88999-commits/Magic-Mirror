@@ -11,7 +11,7 @@
     background: #010103; 
     font-family: monospace; 
   }
-  canvas { display: block; outline: none; }
+  canvas { display: block; outline: none; touch-action: none; }
 
   #start-screen {
     position: absolute;
@@ -25,8 +25,14 @@
     color: #00ffff;
     text-align: center;
     cursor: pointer;
-    transition: opacity 1.5s ease-out;
+    transition: opacity 1.5s ease-out, visibility 1.5s ease-out;
     overflow: hidden;
+    pointer-events: all;
+  }
+  #start-screen.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
   }
   #start-screen::before {
     content: '';
@@ -34,7 +40,7 @@
     inset: 0;
     background: url('https://files.catbox.moe/4o8srk.jpeg') center/cover no-repeat;
     transform: scaleX(-1); /* Mirror effect */
-    filter: blur(1px);
+    filter: blur(1px) brightness(1.1);
     animation: slowPan 45s linear infinite;
     opacity: 0.85;
   }
@@ -56,9 +62,9 @@
     animation: ticker 1.8s linear infinite, glitch 0.3s steps(2) infinite;
   }
 
-  @keyframes ticker { 0% { opacity: 0.3; } 50% { opacity: 1; } 100% { opacity: 0.3; }
+  @keyframes ticker { 0% { opacity: 0.3; } 50% { opacity: 1; } 100% { opacity: 0.3; } }
   @keyframes glitch { 0%{text-shadow:0 0 5px #00ffaa} 33%{text-shadow:2px 0 #ff00ff, -2px 0 #00ffff} 66%{text-shadow:-1px 0 #00ffff, 1px 0 #ff00ff} 100%{text-shadow:0 0 5px #00ffaa} }
-  @keyframes slowPan { 0% { background-position: 30% 50%; } 100% { background-position: 70% 50%; }
+  @keyframes slowPan { 0% { background-position: 30% 50%; } 100% { background-position: 70% 50%; } }
   @keyframes float { 0%,100%{transform: translateY(0)} 50%{transform: translateY(-8px)} }
 </style>
 </head>
@@ -98,12 +104,16 @@ composer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.4, 0.6, 0.35);
 composer.addPass(bloomPass);
 
+// CONTROLS WITH PAN RESTORED
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.04;
-controls.enablePan = false;
+controls.enablePan = true; // FIXED: was false
+controls.panSpeed = 0.5;
 controls.target.set(0, 15, 0);
 controls.maxPolarAngle = Math.PI / 2 + 0.05;
+controls.minDistance = 10;
+controls.maxDistance = 80;
 
 // TEXTURE LOADER WITH CORS
 const textureLoader = new THREE.TextureLoader();
@@ -123,9 +133,10 @@ const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(1000, 1000), 
   new THREE.MeshStandardMaterial({ 
     map: floorTex, 
-    emissive: 0xffffff, 
-    emissiveIntensity: 0.3, 
-    roughness: 0.85 
+    emissive: 0x00ffff, 
+    emissiveIntensity: 0.2, 
+    roughness: 0.85,
+    metalness: 0.1
   })
 );
 floor.rotation.x = -Math.PI / 2;
@@ -135,7 +146,7 @@ scene.add(new THREE.Mesh(
   new THREE.SphereGeometry(100, 64, 32, 0, Math.PI*2, 0, Math.PI/2), 
   new THREE.MeshStandardMaterial({ 
     map: innerDomeTex, 
-    emissive: 0xffffff, 
+    emissive: 0x00ffff, 
     emissiveIntensity: 0.35, 
     side: THREE.BackSide 
   })
@@ -145,7 +156,7 @@ scene.add(new THREE.Mesh(
   new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), 
   new THREE.MeshStandardMaterial({ 
     map: outerDomeTex, 
-    emissive: 0xffffff, 
+    emissive: 0xaa00ff, 
     emissiveIntensity: 0.5, 
     side: THREE.FrontSide 
   })
@@ -185,7 +196,7 @@ const frameMat = new THREE.ShaderMaterial({
       if(distance(vUv, vec2(0.5)) < 0.262) discard; 
       float p = 1.0 + sin(time*1.5)*0.25; 
       if(c.r>0.12||c.b>0.12) c.rgb *= p; 
-      gl_FragColor = vec4(c.rgb * smoothstep(0.5,0.44,distance(vUv,vec2(0.5))),1.0); 
+      gl_FlagColor = vec4(c.rgb * smoothstep(0.5,0.44,distance(vUv,vec2(0.5))),1.0); 
     } 
   `,
   transparent: true,
@@ -201,13 +212,16 @@ scene.add(new THREE.PointLight(0x00ffff, 60, 150).position.set(-20,30,20));
 scene.add(new THREE.PointLight(0xaa00ff, 60, 150).position.set(20,30,-20));
 scene.add(new THREE.DirectionalLight(0x4466ff, 1.2));
 
-// Start Screen Logic
+// Start Screen Logic - FIXED
 const startScreen = document.getElementById('start-screen');
 let videoDirection = 1;
+let started = false;
 
-startScreen.addEventListener('click', () => {
-  startScreen.style.opacity = '0';
-  setTimeout(() => startScreen.style.display = 'none', 1500);
+const startSequence = () => {
+  if(started) return;
+  started = true;
+  
+  startScreen.classList.add('hidden');
   
   // Boost bloom after intro
   bloomPass.strength = 1.25;
@@ -219,12 +233,15 @@ startScreen.addEventListener('click', () => {
 
   video.addEventListener('ended', () => {
     videoDirection *= -1;
-    video.currentTime = videoDirection > 0 ? 0 : video.duration - 0.1;
+    video.currentTime = videoDirection > 0 ? 0 : Math.max(0, video.duration - 0.1);
     playPingPong();
   });
 
   playPingPong();
-}, { once: true });
+}
+
+startScreen.addEventListener('click', startSequence, { once: true });
+startScreen.addEventListener('touchend', startSequence, { once: true });
 
 // Resize + Loop
 window.addEventListener('resize', () => {
