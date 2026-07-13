@@ -69,10 +69,12 @@
     animation: ticker 1.6s linear infinite, glitch 0.4s infinite;
     pointer-events: none;
   }
-  @keyframes ticker { 0%,100% { opacity: 0.35; } 50% { opacity: 1; }
-  @keyframes glitch { 0% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; } 20% { text-shadow: -2px 0 #ff00ff, 2px 0 #00ffff; } 40% { text-shadow: 1px 0 #00ffff, -1px 0 #ff00ff; } 100% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; }
-  @keyframes slowPan { 0% { background-position: 25% 50%; } 100% { background-position: 75% 50%; }
-  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); }
+  
+  /* Added missing closing brackets to keyframes */
+  @keyframes ticker { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
+  @keyframes glitch { 0% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; } 20% { text-shadow: -2px 0 #ff00ff, 2px 0 #00ffff; } 40% { text-shadow: 1px 0 #00ffff, -1px 0 #ff00ff; } 100% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; } }
+  @keyframes slowPan { 0% { background-position: 25% 50%; } 100% { background-position: 75% 50%; } }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
 </style>
 </head>
 <body>
@@ -88,6 +90,9 @@ import { EffectComposer } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examp
 import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/UnrealBloomPass.js';
 
+// ────────────────────────────────────────────────
+// Scene Setup
+// ────────────────────────────────────────────────
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x010103);
 
@@ -119,17 +124,28 @@ controls.maxPolarAngle = Math.PI * 0.48;
 controls.minDistance = 8;
 controls.maxDistance = 90;
 
+// ────────────────────────────────────────────────
+// External Asset Loading
+// ────────────────────────────────────────────────
 const loader = new THREE.TextureLoader();
 loader.setCrossOrigin('anonymous');
 
 const floorTex = loader.load('https://files.catbox.moe/6xph8n.JPEG');
 floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
 floorTex.repeat.set(4, 4);
+floorTex.colorSpace = THREE.SRGBColorSpace;
 
 const innerDomeTex = loader.load('https://files.catbox.moe/vpvm1x.JPEG');
+innerDomeTex.colorSpace = THREE.SRGBColorSpace;
+
 const outerDomeTex = loader.load('https://files.catbox.moe/vhffm6.JPEG');
+outerDomeTex.colorSpace = THREE.SRGBColorSpace;
+
 const frameTex = loader.load('https://files.catbox.moe/98i4rp.jpeg');
 
+// ────────────────────────────────────────────────
+// Environment Geometries
+// ────────────────────────────────────────────────
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(1000,1000), 
   new THREE.MeshStandardMaterial({ map: floorTex, emissive: 0x112233, emissiveIntensity: 0.25, roughness: 0.9 })
@@ -141,13 +157,17 @@ scene.add(new THREE.Mesh(
   new THREE.SphereGeometry(100, 64, 32, 0, Math.PI*2, 0, Math.PI/2), 
   new THREE.MeshStandardMaterial({ map: innerDomeTex, emissive: 0x00aaff, emissiveIntensity: 0.4, side: THREE.BackSide })
 ));
+
 scene.add(new THREE.Mesh(
   new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), 
   new THREE.MeshStandardMaterial({ map: outerDomeTex, emissive: 0xff00aa, emissiveIntensity: 0.55, side: THREE.FrontSide })
 ));
 
-// Mirror
+// ────────────────────────────────────────────────
+// The Vortex Mirror
+// ────────────────────────────────────────────────
 const mirrorGroup = new THREE.Group();
+
 const video = document.createElement('video');
 video.src = 'https://files.catbox.moe/4ab3h5.mp4';
 video.muted = true;
@@ -157,6 +177,88 @@ video.loop = false;
 
 const videoTex = new THREE.VideoTexture(video);
 videoTex.colorSpace = THREE.SRGBColorSpace;
+videoTex.minFilter = THREE.LinearFilter;
+videoTex.magFilter = THREE.LinearFilter;
 
+// Completing the cut-off code here:
 const videoMesh = new THREE.Mesh(
-  new THREE.C
+  new THREE.CircleGeometry(3.3, 64),
+  new THREE.MeshBasicMaterial({ map: videoTex })
+);
+videoMesh.position.set(0, 0, -0.15);
+mirrorGroup.add(videoMesh);
+
+const frameMat = new THREE.ShaderMaterial({
+  uniforms: { tDiffuse: { value: frameTex }, time: { value: 0 } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float time; varying vec2 vUv; void main() { 
+    vec4 c = texture2D(tDiffuse, vUv); float d = distance(vUv, vec2(0.5));
+    if(d < 0.262) discard; 
+    c.rgb *= (1.0 + sin(time * 1.5) * 0.25);
+    gl_FragColor = vec4(c.rgb * smoothstep(0.5, 0.44, d), 1.0); }`,
+  transparent: true,
+  side: THREE.DoubleSide
+});
+
+const frameMesh = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), frameMat);
+mirrorGroup.add(frameMesh);
+mirrorGroup.position.set(0, 0, -14);
+camera.add(mirrorGroup);
+
+// ────────────────────────────────────────────────
+// Lighting
+// ────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.15));
+scene.add(new THREE.PointLight(0x00ffff, 60, 150).position.set(-20, 30, 20));
+scene.add(new THREE.PointLight(0xaa00ff, 60, 150).position.set(20, 30, -20));
+scene.add(new THREE.DirectionalLight(0x4466ff, 1.2));
+
+// ────────────────────────────────────────────────
+// Interactivity & Start Logic
+// ────────────────────────────────────────────────
+const startScreen = document.getElementById('start-screen');
+const canvasEl = document.querySelector('canvas');
+
+startScreen.addEventListener('click', () => {
+  startScreen.classList.add('hidden');
+  canvasEl.classList.add('enabled');
+  controls.enabled = true; // Unlock camera controls
+  video.play().catch(e => console.error("Video play failed:", e));
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ────────────────────────────────────────────────
+// Animation Loop
+// ────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function loop() {
+  requestAnimationFrame(loop);
+  
+  const t = clock.getElapsedTime();
+  controls.update();
+  
+  frameMat.uniforms.time.value = t;
+  
+  // Organic hover and breathe effect
+  mirrorGroup.position.y = Math.sin(t * 1.2) * 0.35;
+  mirrorGroup.rotation.x = Math.sin(t * 0.8) * 0.02;
+  mirrorGroup.rotation.y = Math.cos(t * 0.9) * 0.02;
+  
+  if (video.readyState >= video.HAVE_CURRENT_DATA) {
+    videoTex.needsUpdate = true;
+  }
+  
+  composer.render();
+}
+
+loop();
+</script>
+</body>
+</html>
