@@ -9,20 +9,21 @@
     margin: 0; 
     overflow: hidden; 
     background: #010103; 
-    font-family: monospace; 
-    touch-action: none;
+    font-family: monospace;
   }
   canvas { 
     display: block; 
-    outline: none; 
+    outline: none;
+    pointer-events: none; /* let start screen get clicks first */
   }
-
+  canvas.enabled {
+    pointer-events: auto; /* enable after start */
+  }
   #start-screen {
     position: fixed;
     inset: 0;
     z-index: 9999;
-    background: linear-gradient(rgba(1,1,3,0.35), rgba(1,1,3,0.75)), 
-                url('https://files.catbox.moe/4o8srk.jpeg') center/cover no-repeat;
+    background: linear-gradient(rgba(1,1,3,0.35), rgba(1,1,3,0.75)), url('https://files.catbox.moe/4o8srk.jpeg') center/cover no-repeat;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -30,11 +31,13 @@
     color: #00ffff;
     text-align: center;
     cursor: pointer;
-    transition: opacity 1.8s ease-out;
+    transition: opacity 1.8s ease-out, visibility 1.8s ease-out;
     overflow: hidden;
+    touch-action: manipulation;
   }
-  #start-screen.hidden {
-    opacity: 0;
+  #start-screen.hidden { 
+    opacity: 0; 
+    visibility: hidden;
     pointer-events: none;
   }
   #start-screen::before {
@@ -54,6 +57,7 @@
     z-index: 2;
     position: relative;
     animation: float 4.5s ease-in-out infinite;
+    pointer-events: none;
   }
   #ticker {
     font-size: clamp(0.95rem, 2.8vw, 1.15rem);
@@ -63,27 +67,15 @@
     z-index: 2;
     position: relative;
     animation: ticker 1.6s linear infinite, glitch 0.4s infinite;
+    pointer-events: none;
   }
-
-  @keyframes ticker { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
-  @keyframes glitch {
-    0%   { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; }
-    20%  { text-shadow: -2px 0 #ff00ff, 2px 0 #00ffff; }
-    40%  { text-shadow: 1px 0 #00ffff, -1px 0 #ff00ff; }
-    100% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; }
-  }
-  @keyframes slowPan { 
-    0%   { background-position: 25% 50%; }
-    100% { background-position: 75% 50%; }
-  }
-  @keyframes float { 
-    0%,100% { transform: translateY(0); }
-    50% { transform: translateY(-12px); }
-  }
+  @keyframes ticker { 0%,100% { opacity: 0.35; } 50% { opacity: 1; }
+  @keyframes glitch { 0% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; } 20% { text-shadow: -2px 0 #ff00ff, 2px 0 #00ffff; } 40% { text-shadow: 1px 0 #00ffff, -1px 0 #ff00ff; } 100% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; }
+  @keyframes slowPan { 0% { background-position: 25% 50%; } 100% { background-position: 75% 50%; }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); }
 </style>
 </head>
 <body>
-
 <div id="start-screen">
   <div id="start-text">MIRROR, MIRROR ON THE WALL</div>
   <div id="ticker">TAP TO INITIALIZE SEQUENCE</div>
@@ -113,10 +105,11 @@ document.body.appendChild(renderer.domElement);
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.4, 0.5, 0.3);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.5, 0.3);
 composer.addPass(bloomPass);
 
 const controls = new OrbitControls(camera, renderer.domElement);
+controls.enabled = false;
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.enablePan = true;
@@ -125,10 +118,10 @@ controls.target.set(0, 15, 0);
 controls.maxPolarAngle = Math.PI * 0.48;
 controls.minDistance = 8;
 controls.maxDistance = 90;
-controls.enabled = false;
 
-// Textures
 const loader = new THREE.TextureLoader();
+loader.setCrossOrigin('anonymous');
+
 const floorTex = loader.load('https://files.catbox.moe/6xph8n.JPEG');
 floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
 floorTex.repeat.set(4, 4);
@@ -137,15 +130,21 @@ const innerDomeTex = loader.load('https://files.catbox.moe/vpvm1x.JPEG');
 const outerDomeTex = loader.load('https://files.catbox.moe/vhffm6.JPEG');
 const frameTex = loader.load('https://files.catbox.moe/98i4rp.jpeg');
 
-// Environment
-scene.add(new THREE.Mesh(new THREE.PlaneGeometry(1000,1000), 
-  new THREE.MeshStandardMaterial({ map: floorTex, emissive: 0x112233, emissiveIntensity: 0.25, roughness: 0.9 })));
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(1000,1000), 
+  new THREE.MeshStandardMaterial({ map: floorTex, emissive: 0x112233, emissiveIntensity: 0.25, roughness: 0.9 })
+);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
 
-scene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 64, 32, 0, Math.PI*2, 0, Math.PI/2), 
-  new THREE.MeshStandardMaterial({ map: innerDomeTex, emissive: 0x00aaff, emissiveIntensity: 0.4, side: THREE.BackSide })));
-
-scene.add(new THREE.Mesh(new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), 
-  new THREE.MeshStandardMaterial({ map: outerDomeTex, emissive: 0xff00aa, emissiveIntensity: 0.55, side: THREE.FrontSide })));
+scene.add(new THREE.Mesh(
+  new THREE.SphereGeometry(100, 64, 32, 0, Math.PI*2, 0, Math.PI/2), 
+  new THREE.MeshStandardMaterial({ map: innerDomeTex, emissive: 0x00aaff, emissiveIntensity: 0.4, side: THREE.BackSide })
+));
+scene.add(new THREE.Mesh(
+  new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), 
+  new THREE.MeshStandardMaterial({ map: outerDomeTex, emissive: 0xff00aa, emissiveIntensity: 0.55, side: THREE.FrontSide })
+));
 
 // Mirror
 const mirrorGroup = new THREE.Group();
@@ -154,88 +153,10 @@ video.src = 'https://files.catbox.moe/4ab3h5.mp4';
 video.muted = true;
 video.playsInline = true;
 video.preload = 'auto';
+video.loop = false;
 
 const videoTex = new THREE.VideoTexture(video);
-const videoMesh = new THREE.Mesh(new THREE.CircleGeometry(3.3, 64), new THREE.MeshBasicMaterial({ map: videoTex }));
-videoMesh.position.z = -0.15;
-mirrorGroup.add(videoMesh);
+videoTex.colorSpace = THREE.SRGBColorSpace;
 
-const frameMat = new THREE.ShaderMaterial({
-  uniforms: { tDiffuse: { value: frameTex }, time: { value: 0 }},
-  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-  fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float time; varying vec2 vUv;
-    void main(){
-      vec4 c = texture2D(tDiffuse, vUv);
-      if (distance(vUv, vec2(0.5)) < 0.262) discard;
-      float pulse = 1.0 + sin(time * 1.8) * 0.3;
-      if (c.r > 0.1 || c.b > 0.1) c.rgb *= pulse;
-      gl_FragColor = vec4(c.rgb * smoothstep(0.52, 0.43, distance(vUv, vec2(0.5))), 1.0);
-    }
-  `,
-  transparent: true, side: THREE.DoubleSide
-});
-mirrorGroup.add(new THREE.Mesh(new THREE.PlaneGeometry(12,12), frameMat));
-mirrorGroup.position.set(0, 0, -14);
-camera.add(mirrorGroup);
-
-// Lighting
-scene.add(new THREE.AmbientLight(0xffffff, 0.2));
-scene.add(new THREE.PointLight(0x00ffff, 70, 200).position.set(-25,35,25));
-scene.add(new THREE.PointLight(0xff00aa, 70, 200).position.set(25,35,-25));
-scene.add(new THREE.DirectionalLight(0x6688ff, 1.1));
-
-// Interaction
-const startScreen = document.getElementById('start-screen');
-let videoDirection = 1;
-let started = false;
-
-function startExperience() {
-  if (started) return;
-  started = true;
-
-  startScreen.classList.add('hidden');
-  controls.enabled = true;
-  bloomPass.strength = 1.35;
-
-  video.play();
-
-  video.addEventListener('ended', () => {
-    videoDirection *= -1;
-    video.currentTime = videoDirection > 0 ? 0 : video.duration;
-    video.playbackRate = videoDirection;
-    video.play();
-  });
-}
-
-startScreen.addEventListener('click', startExperience, { once: true });
-startScreen.addEventListener('touchstart', startExperience, { once: true, passive: true });
-
-// Resize
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
-});
-
-const clock = new THREE.Clock();
-function loop() {
-  requestAnimationFrame(loop);
-  const t = clock.getElapsedTime();
-
-  if (controls.enabled) controls.update();
-  frameMat.uniforms.time.value = t;
-
-  mirrorGroup.position.y = Math.sin(t * 1.1) * 0.4;
-  mirrorGroup.rotation.x = Math.sin(t * 0.7) * 0.015;
-  mirrorGroup.rotation.y = Math.cos(t * 0.85) * 0.018;
-
-  if (video.readyState >= 2) videoTex.needsUpdate = true;
-
-  composer.render();
-}
-loop();
-</script>
-</body>
-</html>
+const videoMesh = new THREE.Mesh(
+  new THREE.C
