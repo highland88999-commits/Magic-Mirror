@@ -10,11 +10,12 @@
     overflow: hidden; 
     background: #010103; 
     font-family: monospace;
-    touch-action: none; /* Prevents browser zooming/scrolling issues */
+    touch-action: none; 
   }
   canvas { 
     display: block; 
     outline: none;
+    cursor: pointer;
   }
   /* Start Screen Overlay */
   #start-screen {
@@ -29,9 +30,8 @@
     color: #00ffff;
     text-align: center;
     cursor: pointer;
-    transition: opacity 1.2s ease-out, visibility 1.2s ease-out;
+    transition: opacity 1.8s ease-out, visibility 1.8s ease-out;
     overflow: hidden;
-    /* Force hardware acceleration for smoother fade */
     transform: translateZ(0); 
   }
   #start-screen.hidden { 
@@ -73,15 +73,30 @@
   @keyframes glitch { 0% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; } 20% { text-shadow: -2px 0 #ff00ff, 2px 0 #00ffff; } 40% { text-shadow: 1px 0 #00ffff, -1px 0 #ff00ff; } 100% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; } }
   @keyframes slowPan { 0% { background-position: 25% 50%; } 100% { background-position: 75% 50%; } }
   @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+  
+  #hint-overlay {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #00ffff;
+    font-size: 14px;
+    letter-spacing: 3px;
+    opacity: 0;
+    transition: opacity 1s ease-out;
+    pointer-events: none;
+    z-index: 1000;
+  }
 </style>
 </head>
-<body>
+<body onclick="void(0)">
 
-<!-- onclick="void(0)" is critical to force iOS Safari to recognize this div as clickable -->
-<div id="start-screen" onclick="void(0)">
+<div id="start-screen">
   <div id="start-text">MIRROR, MIRROR ON THE WALL</div>
-  <div id="ticker">TAP TO INITIALIZE SEQUENCE</div>
+  <div id="ticker">TAP TO INITIALIZE</div>
 </div>
+
+<div id="hint-overlay">TAP TO ENTER DOME</div>
 
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js';
@@ -96,8 +111,9 @@ import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/exam
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x010103);
 
+// Start camera far outside the massive dome (radius is 102)
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 3000);
-camera.position.set(0, 12, 35);
+camera.position.set(0, 50, 250);
 scene.add(camera);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -114,10 +130,10 @@ const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, windo
 composer.addPass(bloomPass);
 
 // ────────────────────────────────────────────────
-// Controls
+// Controls (Disabled until inside)
 // ────────────────────────────────────────────────
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enabled = false; // Locked until screen is tapped
+controls.enabled = false; 
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.enablePan = true;
@@ -161,6 +177,7 @@ scene.add(new THREE.Mesh(
   new THREE.MeshStandardMaterial({ map: innerDomeTex, emissive: 0x00aaff, emissiveIntensity: 0.4, side: THREE.BackSide })
 ));
 
+// Outer Dome
 scene.add(new THREE.Mesh(
   new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), 
   new THREE.MeshStandardMaterial({ map: outerDomeTex, emissive: 0xff00aa, emissiveIntensity: 0.55, side: THREE.FrontSide })
@@ -206,7 +223,7 @@ const frameMat = new THREE.ShaderMaterial({
 const frameMesh = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), frameMat);
 mirrorGroup.add(frameMesh);
 mirrorGroup.position.set(0, 0, -14);
-camera.add(mirrorGroup);
+scene.add(mirrorGroup); // Added to scene instead of camera for independent tracking
 
 // ────────────────────────────────────────────────
 // Lighting
@@ -217,24 +234,42 @@ scene.add(new THREE.PointLight(0xaa00ff, 60, 150).position.set(20, 30, -20));
 scene.add(new THREE.DirectionalLight(0x4466ff, 1.2));
 
 // ────────────────────────────────────────────────
-// Interactivity & Start Logic (FIXED FOR MOBILE)
+// App States & Interaction Sequence
 // ────────────────────────────────────────────────
+let appState = 'LANDING'; // LANDING -> OUTSIDE -> ENTERING -> INSIDE
 const startScreen = document.getElementById('start-screen');
-let sequenceInitialized = false;
+const hintOverlay = document.getElementById('hint-overlay');
 
-function initSequence() {
-  if (sequenceInitialized) return;
-  sequenceInitialized = true;
-  
-  startScreen.classList.add('hidden');
-  controls.enabled = true; // Unlock camera controls
-  
-  video.play().catch(e => console.error("Video play failed:", e));
+// Target position inside the dome where the camera will rest
+const insideCameraPos = new THREE.Vector3(0, 12, 35);
+const centerTarget = new THREE.Vector3(0, 15, 0);
+
+// Interaction 1: Dissolve Landing Screen
+function dissolveLanding(e) {
+  if (appState === 'LANDING') {
+    e.stopPropagation(); // Stop click from bleeding into the next phase immediately
+    appState = 'OUTSIDE';
+    startScreen.classList.add('hidden');
+    
+    // Show prompt to click again after a short delay
+    setTimeout(() => {
+        if(appState === 'OUTSIDE') hintOverlay.style.opacity = 1;
+    }, 1500);
+  }
 }
+startScreen.addEventListener('click', dissolveLanding);
+startScreen.addEventListener('pointerdown', dissolveLanding);
 
-// Attach multiple listener types to ensure it fires reliably on all devices
-startScreen.addEventListener('click', initSequence);
-startScreen.addEventListener('pointerdown', initSequence);
+// Interaction 2: Enter the Dome
+window.addEventListener('pointerdown', (e) => {
+  if (appState === 'OUTSIDE') {
+    appState = 'ENTERING';
+    hintOverlay.style.opacity = 0; // Hide the prompt
+    
+    // Trigger video playback right as we start flying in
+    video.play().catch(e => console.error("Video play failed:", e));
+  }
+});
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -244,23 +279,47 @@ window.addEventListener('resize', () => {
 });
 
 // ────────────────────────────────────────────────
-// Animation Loop
+// Cinematic Animation Loop
 // ────────────────────────────────────────────────
 const clock = new THREE.Clock();
+let orbitAngle = 0;
 
 function loop() {
   requestAnimationFrame(loop);
-  
   const t = clock.getElapsedTime();
-  controls.update();
   
   frameMat.uniforms.time.value = t;
   
-  // Organic hover and breathe effect
+  // Organic hover for the mirror in the center
   mirrorGroup.position.y = Math.sin(t * 1.2) * 0.35;
   mirrorGroup.rotation.x = Math.sin(t * 0.8) * 0.02;
   mirrorGroup.rotation.y = Math.cos(t * 0.9) * 0.02;
-  
+
+  // Cinematic Camera State Machine
+  if (appState === 'LANDING' || appState === 'OUTSIDE') {
+    // Phase 1 & 2: Slowly orbit the outside of the dome
+    orbitAngle += 0.002;
+    camera.position.x = Math.sin(orbitAngle) * 250;
+    camera.position.z = Math.cos(orbitAngle) * 250;
+    camera.position.y = 50 + Math.sin(t * 0.5) * 10;
+    camera.lookAt(centerTarget);
+    
+  } else if (appState === 'ENTERING') {
+    // Phase 3: Smoothly interpolate (zoom) into the dome to the target position
+    camera.position.lerp(insideCameraPos, 0.035);
+    camera.lookAt(centerTarget);
+    
+    // Check if we have arrived inside
+    if (camera.position.distanceTo(insideCameraPos) < 1.0) {
+      appState = 'INSIDE';
+      controls.enabled = true; // Unlock user panning
+    }
+    
+  } else if (appState === 'INSIDE') {
+    // Phase 4: Full user control
+    controls.update();
+  }
+
   if (video.readyState >= video.HAVE_CURRENT_DATA) {
     videoTex.needsUpdate = true;
   }
