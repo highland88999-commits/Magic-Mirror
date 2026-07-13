@@ -67,6 +67,8 @@
   function handleMasterClick() {
     if (appState === 'LANDING') {
       appState = 'OUTSIDE';
+      
+      // Unlock all 5 videos simultaneously
       if (window.unlockMedia) window.unlockMedia();
 
       document.getElementById('landing-layer').style.opacity = '0';
@@ -135,76 +137,82 @@ controls.maxPolarAngle = Math.PI / 2 + 0.05;
 controls.minDistance = 8;
 controls.maxDistance = 90;
 
-const loader = new THREE.TextureLoader();
-loader.setCrossOrigin('anonymous');
+// ────────────────────────────────────────────────
+// Dynamic Video Texture Pipeline
+// ────────────────────────────────────────────────
+function createVideo(url) {
+    const v = document.createElement('video');
+    v.src = url;
+    v.muted = true;
+    v.playsInline = true;
+    v.loop = true;
+    v.crossOrigin = 'anonymous';
+    v.setAttribute('webkit-playsinline', 'webkit-playsinline');
+    v.setAttribute('playsinline', 'playsinline');
+    v.setAttribute('loop', 'true');
+    // Failsafe loop trigger
+    v.addEventListener('ended', () => { v.currentTime = 0; v.play(); });
+    return v;
+}
 
-const floorTex = loader.load('https://files.catbox.moe/6xph8n.JPEG');
+// Instantiate all video elements
+const vortexVid = createVideo('https://files.catbox.moe/4ab3h5.mp4');
+const frameVid = createVideo('https://files.catbox.moe/wmhz50.mp4');
+const floorVid = createVideo('https://files.catbox.moe/ot3ez3.mp4');
+const innerVid = createVideo('https://files.catbox.moe/ut650a.mp4');
+const outerVid = createVideo('https://files.catbox.moe/cfxyi1.mp4');
+
+// Group for the master unlocker
+const mediaPool = [vortexVid, frameVid, floorVid, innerVid, outerVid];
+window.unlockMedia = () => { 
+    mediaPool.forEach(vid => vid.play().catch(e => console.warn("Autoplay constraint:", e))); 
+};
+
+// Convert to THREE VideoTextures
+const vortexTex = new THREE.VideoTexture(vortexVid); vortexTex.colorSpace = THREE.SRGBColorSpace;
+const frameTex = new THREE.VideoTexture(frameVid); frameTex.colorSpace = THREE.SRGBColorSpace;
+const floorTex = new THREE.VideoTexture(floorVid); floorTex.colorSpace = THREE.SRGBColorSpace;
+const innerTex = new THREE.VideoTexture(innerVid); innerTex.colorSpace = THREE.SRGBColorSpace;
+const outerTex = new THREE.VideoTexture(outerVid); outerTex.colorSpace = THREE.SRGBColorSpace;
+
 floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
 floorTex.repeat.set(4, 4);
-floorTex.colorSpace = THREE.SRGBColorSpace;
 
-const innerDomeTex = loader.load('https://files.catbox.moe/vpvm1x.JPEG');
-innerDomeTex.colorSpace = THREE.SRGBColorSpace;
-const outerDomeTex = loader.load('https://files.catbox.moe/vhffm6.JPEG');
-outerDomeTex.colorSpace = THREE.SRGBColorSpace;
-
-// NEW FRAME GRAPHIC
-const frameTex = loader.load('https://files.catbox.moe/8vdgbf.jpeg');
-frameTex.colorSpace = THREE.SRGBColorSpace;
-
+// ────────────────────────────────────────────────
+// Environmental Geometry Mapping
+// ────────────────────────────────────────────────
 const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, emissive: 0xffffff, emissiveMap: floorTex, emissiveIntensity: 0.3, roughness: 0.9 });
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), floorMat);
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
-const innerDomeMat = new THREE.MeshStandardMaterial({ map: innerDomeTex, emissive: 0xffffff, emissiveMap: innerDomeTex, emissiveIntensity: 0.35, side: THREE.BackSide });
+const innerDomeMat = new THREE.MeshStandardMaterial({ map: innerTex, emissive: 0xffffff, emissiveMap: innerTex, emissiveIntensity: 0.35, side: THREE.BackSide });
 scene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 64, 32, 0, Math.PI*2, 0, Math.PI/2), innerDomeMat));
 
-const outerDomeMat = new THREE.MeshStandardMaterial({ map: outerDomeTex, emissive: 0xffffff, emissiveMap: outerDomeTex, emissiveIntensity: 0.45, side: THREE.FrontSide });
+const outerDomeMat = new THREE.MeshStandardMaterial({ map: outerTex, emissive: 0xffffff, emissiveMap: outerTex, emissiveIntensity: 0.45, side: THREE.FrontSide });
 scene.add(new THREE.Mesh(new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), outerDomeMat));
 
 // ────────────────────────────────────────────────
 // The Vortex Mirror & Frame Matrix
 // ────────────────────────────────────────────────
 const mirrorGroup = new THREE.Group();
-
-// Bulletproof Infinite Video Loop
-const video = document.createElement('video');
-video.src = 'https://files.catbox.moe/4ab3h5.mp4';
-video.muted = true;
-video.playsInline = true;
-video.loop = true; 
-video.setAttribute('loop', 'true'); // Enforce for mobile WebKit
-video.crossOrigin = 'anonymous';
-
-// Failsafe to ensure loop triggers smoothly
-video.addEventListener('ended', () => {
-    video.currentTime = 0;
-    video.play();
-});
-
-window.unlockMedia = () => { video.play().catch(e => console.warn(e)); };
-
-const videoTex = new THREE.VideoTexture(video);
-videoTex.colorSpace = THREE.SRGBColorSpace;
-
 const frameSize = 12; 
 const innerHoleRatio = 0.26; 
 
-// The Video Mesh - Slightly dimmed to blend naturally into the dark frame aesthetic
+// The Video Mesh
 const overlapMargin = 0.04; 
 const videoRadius = (frameSize * innerHoleRatio) + overlapMargin; 
 const videoMat = new THREE.MeshBasicMaterial({ 
-    map: videoTex, 
+    map: vortexTex, 
     transparent: true, 
     opacity: 0,
-    color: 0xd0d0d0 // Dims the raw white output slightly to prevent clashing with the dark mood
+    color: 0xd0d0d0 
 });
 const videoMesh = new THREE.Mesh(new THREE.CircleGeometry(videoRadius, 64), videoMat);
 videoMesh.position.set(0, 0, -0.02); 
 mirrorGroup.add(videoMesh);
 
-// The Blended Frame Mesh (Replaced hard discard with smooth inner vignette shadow)
+// The Blended Video Frame Shader
 const frameMat = new THREE.ShaderMaterial({
   uniforms: { tDiffuse: { value: frameTex }, time: { value: 0 }, globalAlpha: { value: 0.0 } },
   vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
@@ -217,19 +225,13 @@ const frameMat = new THREE.ShaderMaterial({
       vec4 c = texture2D(tDiffuse, vUv); 
       float d = distance(vUv, vec2(0.5)); 
       
-      // Smooth inner gradient (fades the physical hole smoothly instead of sharp pixel cut)
       float innerAlpha = smoothstep(0.24, 0.27, d); 
-      
-      // Inner shadow vignette (darkens the frame's edge right where it overlaps the video)
       float innerShadow = smoothstep(0.24, 0.32, d);
       
-      // Neon pulse math from the graphic
+      // Video pulse effect synced to shader time
       vec3 pulsedColor = c.rgb * (1.0 + sin(time * 1.5) * 0.25); 
       
-      // Tight outer edge boundary
       float outerAlpha = smoothstep(0.48, 0.44, d); 
-      
-      // Combine alphas for perfect anti-aliased integration
       float finalAlpha = globalAlpha * innerAlpha * outerAlpha;
       
       gl_FragColor = vec4(pulsedColor * innerShadow, finalAlpha); 
@@ -299,7 +301,6 @@ function loop() {
     }
   }
 
-  if (video.readyState >= video.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
   composer.render();
 }
 loop();
