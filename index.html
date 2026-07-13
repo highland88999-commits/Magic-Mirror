@@ -10,36 +10,38 @@
     overflow: hidden; 
     background: #010103; 
     font-family: monospace;
-    touch-action: none; 
+    touch-action: none; /* Prevents mobile swipe-to-refresh/zoom bugs */
   }
   canvas { 
     display: block; 
     outline: none;
-    cursor: pointer;
   }
-  /* Start Screen Overlay */
-  #start-screen {
+  
+  /* The Master UI Controller */
+  #ui-manager {
     position: fixed;
     inset: 0;
     z-index: 9999;
-    background: linear-gradient(rgba(1,1,3,0.35), rgba(1,1,3,0.75)), url('https://files.catbox.moe/4o8srk.jpeg') center/cover no-repeat;
+    cursor: pointer; /* Forces iOS to treat the whole screen as a button */
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-direction: column;
-    color: #00ffff;
     text-align: center;
-    cursor: pointer;
-    transition: opacity 1.8s ease-out, visibility 1.8s ease-out;
-    overflow: hidden;
-    transform: translateZ(0); 
+    color: #00ffff;
   }
-  #start-screen.hidden { 
-    opacity: 0; 
-    visibility: hidden;
-    pointer-events: none;
+
+  /* Phase 1: Landing Overlay */
+  #landing-layer {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(rgba(1,1,3,0.35), rgba(1,1,3,0.75)), url('https://files.catbox.moe/4o8srk.jpeg') center/cover no-repeat;
+    transition: opacity 1.5s ease-out;
   }
-  #start-screen::before {
+  #landing-layer::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -48,15 +50,16 @@
     filter: blur(1.5px) brightness(1.15) contrast(1.1);
     animation: slowPan 50s linear infinite;
     opacity: 0.9;
+    z-index: 0;
   }
+
+  /* Landing Text Formatting */
   #start-text {
     font-size: clamp(1.9rem, 6vw, 3rem);
     letter-spacing: 8px;
     text-shadow: 0 0 25px #00ffff, 0 0 60px #00ffff, 0 0 90px #0088ff;
     z-index: 2;
-    position: relative;
     animation: float 4.5s ease-in-out infinite;
-    pointer-events: none;
   }
   #ticker {
     font-size: clamp(0.95rem, 2.8vw, 1.15rem);
@@ -64,39 +67,40 @@
     color: #00ffcc;
     margin-top: 18px;
     z-index: 2;
-    position: relative;
     animation: ticker 1.6s linear infinite, glitch 0.4s infinite;
-    pointer-events: none;
   }
-  
+
+  /* Phase 2: Enter Dome Prompt */
+  #hint-layer {
+    position: absolute;
+    bottom: 15%;
+    font-size: clamp(1rem, 3vw, 1.5rem);
+    letter-spacing: 5px;
+    text-shadow: 0 0 15px #00ffff;
+    opacity: 0; 
+    transition: opacity 1.5s ease-in;
+    z-index: 3;
+    pointer-events: none; /* Text doesn't block clicks */
+  }
+
+  /* Keyframes */
   @keyframes ticker { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
   @keyframes glitch { 0% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; } 20% { text-shadow: -2px 0 #ff00ff, 2px 0 #00ffff; } 40% { text-shadow: 1px 0 #00ffff, -1px 0 #ff00ff; } 100% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; } }
   @keyframes slowPan { 0% { background-position: 25% 50%; } 100% { background-position: 75% 50%; } }
   @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-  
-  #hint-overlay {
-    position: fixed;
-    bottom: 40px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: #00ffff;
-    font-size: 14px;
-    letter-spacing: 3px;
-    opacity: 0;
-    transition: opacity 1s ease-out;
-    pointer-events: none;
-    z-index: 1000;
-  }
 </style>
 </head>
-<body onclick="void(0)">
+<body>
 
-<div id="start-screen">
-  <div id="start-text">MIRROR, MIRROR ON THE WALL</div>
-  <div id="ticker">TAP TO INITIALIZE</div>
+<div id="ui-manager">
+  <div id="landing-layer">
+    <div id="start-text">MIRROR, MIRROR ON THE WALL</div>
+    <div id="ticker">TAP TO INITIALIZE</div>
+  </div>
+  <div id="hint-layer">
+    TAP TO ENTER DOME
+  </div>
 </div>
-
-<div id="hint-overlay">TAP TO ENTER DOME</div>
 
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js';
@@ -106,14 +110,14 @@ import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/
 import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 // ────────────────────────────────────────────────
-// Scene Setup
+// Scene & Camera Setup
 // ────────────────────────────────────────────────
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x010103);
 
-// Start camera far outside the massive dome (radius is 102)
+// Camera starts far out to orbit the exterior
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 3000);
-camera.position.set(0, 50, 250);
+camera.position.set(0, 50, 250); 
 scene.add(camera);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -130,16 +134,15 @@ const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, windo
 composer.addPass(bloomPass);
 
 // ────────────────────────────────────────────────
-// Controls (Disabled until inside)
+// Orbit Controls (Locked initially)
 // ────────────────────────────────────────────────
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enabled = false; 
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.enablePan = true;
-controls.panSpeed = 0.6;
+controls.enablePan = false; // Disable panning so they stay centered in the room
 controls.target.set(0, 15, 0);
-controls.maxPolarAngle = Math.PI * 0.48;
+controls.maxPolarAngle = Math.PI / 2 + 0.05; // Prevent breaking through floor
 controls.minDistance = 8;
 controls.maxDistance = 90;
 
@@ -166,7 +169,7 @@ const frameTex = loader.load('https://files.catbox.moe/98i4rp.jpeg');
 // Environment Geometries
 // ────────────────────────────────────────────────
 const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(1000,1000), 
+  new THREE.PlaneGeometry(1000, 1000), 
   new THREE.MeshStandardMaterial({ map: floorTex, emissive: 0x112233, emissiveIntensity: 0.25, roughness: 0.9 })
 );
 floor.rotation.x = -Math.PI / 2;
@@ -177,14 +180,13 @@ scene.add(new THREE.Mesh(
   new THREE.MeshStandardMaterial({ map: innerDomeTex, emissive: 0x00aaff, emissiveIntensity: 0.4, side: THREE.BackSide })
 ));
 
-// Outer Dome
 scene.add(new THREE.Mesh(
   new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), 
   new THREE.MeshStandardMaterial({ map: outerDomeTex, emissive: 0xff00aa, emissiveIntensity: 0.55, side: THREE.FrontSide })
 ));
 
 // ────────────────────────────────────────────────
-// The Vortex Mirror
+// The Vortex Mirror (Locked to Camera)
 // ────────────────────────────────────────────────
 const mirrorGroup = new THREE.Group();
 
@@ -201,29 +203,35 @@ videoTex.colorSpace = THREE.SRGBColorSpace;
 videoTex.minFilter = THREE.LinearFilter;
 videoTex.magFilter = THREE.LinearFilter;
 
-const videoMesh = new THREE.Mesh(
-  new THREE.CircleGeometry(3.3, 64),
-  new THREE.MeshBasicMaterial({ map: videoTex })
-);
+// Video mesh starts fully transparent (opacity: 0)
+const videoMat = new THREE.MeshBasicMaterial({ map: videoTex, transparent: true, opacity: 0 });
+const videoMesh = new THREE.Mesh(new THREE.CircleGeometry(3.3, 64), videoMat);
 videoMesh.position.set(0, 0, -0.15);
 mirrorGroup.add(videoMesh);
 
+// Frame shader starts fully transparent (globalAlpha: 0.0)
 const frameMat = new THREE.ShaderMaterial({
-  uniforms: { tDiffuse: { value: frameTex }, time: { value: 0 } },
+  uniforms: { 
+    tDiffuse: { value: frameTex }, 
+    time: { value: 0 },
+    globalAlpha: { value: 0.0 } 
+  },
   vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float time; varying vec2 vUv; void main() { 
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float time; uniform float globalAlpha; varying vec2 vUv; void main() { 
     vec4 c = texture2D(tDiffuse, vUv); float d = distance(vUv, vec2(0.5));
     if(d < 0.262) discard; 
     c.rgb *= (1.0 + sin(time * 1.5) * 0.25);
-    gl_FragColor = vec4(c.rgb * smoothstep(0.5, 0.44, d), 1.0); }`,
+    gl_FragColor = vec4(c.rgb * smoothstep(0.5, 0.44, d), globalAlpha); }`,
   transparent: true,
   side: THREE.DoubleSide
 });
 
 const frameMesh = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), frameMat);
 mirrorGroup.add(frameMesh);
+
+// Lock mirror precisely in front of the camera
 mirrorGroup.position.set(0, 0, -14);
-scene.add(mirrorGroup); // Added to scene instead of camera for independent tracking
+camera.add(mirrorGroup);
 
 // ────────────────────────────────────────────────
 // Lighting
@@ -234,42 +242,44 @@ scene.add(new THREE.PointLight(0xaa00ff, 60, 150).position.set(20, 30, -20));
 scene.add(new THREE.DirectionalLight(0x4466ff, 1.2));
 
 // ────────────────────────────────────────────────
-// App States & Interaction Sequence
+// UI State Machine & Interaction Logic
 // ────────────────────────────────────────────────
-let appState = 'LANDING'; // LANDING -> OUTSIDE -> ENTERING -> INSIDE
-const startScreen = document.getElementById('start-screen');
-const hintOverlay = document.getElementById('hint-overlay');
+let appState = 'LANDING'; // Flow: LANDING -> OUTSIDE -> ENTERING -> INSIDE
+const uiManager = document.getElementById('ui-manager');
+const landingLayer = document.getElementById('landing-layer');
+const hintLayer = document.getElementById('hint-layer');
 
-// Target position inside the dome where the camera will rest
-const insideCameraPos = new THREE.Vector3(0, 12, 35);
-const centerTarget = new THREE.Vector3(0, 15, 0);
-
-// Interaction 1: Dissolve Landing Screen
-function dissolveLanding(e) {
+function handleInteraction(e) {
+  // Prevent ghost clicks
+  e.preventDefault(); 
+  
   if (appState === 'LANDING') {
-    e.stopPropagation(); // Stop click from bleeding into the next phase immediately
     appState = 'OUTSIDE';
-    startScreen.classList.add('hidden');
     
-    // Show prompt to click again after a short delay
+    // Crucial iOS Fix: Unlock video playback on the very first touch
+    video.play().catch(console.error);
+
+    // Fade out landing screen
+    landingLayer.style.opacity = '0';
+    
+    // Wait for fade, then show the hint text
     setTimeout(() => {
-        if(appState === 'OUTSIDE') hintOverlay.style.opacity = 1;
+      landingLayer.style.display = 'none';
+      if (appState === 'OUTSIDE') hintLayer.style.opacity = '1';
     }, 1500);
+
+  } else if (appState === 'OUTSIDE') {
+    appState = 'ENTERING';
+    
+    // Hide hint and DESTROY the UI manager's ability to intercept clicks
+    hintLayer.style.opacity = '0';
+    uiManager.style.pointerEvents = 'none'; 
   }
 }
-startScreen.addEventListener('click', dissolveLanding);
-startScreen.addEventListener('pointerdown', dissolveLanding);
 
-// Interaction 2: Enter the Dome
-window.addEventListener('pointerdown', (e) => {
-  if (appState === 'OUTSIDE') {
-    appState = 'ENTERING';
-    hintOverlay.style.opacity = 0; // Hide the prompt
-    
-    // Trigger video playback right as we start flying in
-    video.play().catch(e => console.error("Video play failed:", e));
-  }
-});
+// Bind to both touch and click for universal mobile compatibility
+uiManager.addEventListener('touchstart', handleInteraction, { passive: false });
+uiManager.addEventListener('click', handleInteraction);
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -283,21 +293,27 @@ window.addEventListener('resize', () => {
 // ────────────────────────────────────────────────
 const clock = new THREE.Clock();
 let orbitAngle = 0;
+let mirrorOpacity = 0;
+
+// Hardcoded target coordinates
+const insideCameraPos = new THREE.Vector3(0, 12, 35);
+const centerTarget = new THREE.Vector3(0, 15, 0);
 
 function loop() {
   requestAnimationFrame(loop);
   const t = clock.getElapsedTime();
   
+  // Pass time to shader
   frameMat.uniforms.time.value = t;
   
-  // Organic hover for the mirror in the center
+  // Organic breathing effect for the mirror
   mirrorGroup.position.y = Math.sin(t * 1.2) * 0.35;
   mirrorGroup.rotation.x = Math.sin(t * 0.8) * 0.02;
   mirrorGroup.rotation.y = Math.cos(t * 0.9) * 0.02;
 
-  // Cinematic Camera State Machine
+  // Cinematic State Machine
   if (appState === 'LANDING' || appState === 'OUTSIDE') {
-    // Phase 1 & 2: Slowly orbit the outside of the dome
+    // Phase 1 & 2: Orbit exterior of the dome
     orbitAngle += 0.002;
     camera.position.x = Math.sin(orbitAngle) * 250;
     camera.position.z = Math.cos(orbitAngle) * 250;
@@ -305,21 +321,29 @@ function loop() {
     camera.lookAt(centerTarget);
     
   } else if (appState === 'ENTERING') {
-    // Phase 3: Smoothly interpolate (zoom) into the dome to the target position
+    // Phase 3: Fly straight into the dome
     camera.position.lerp(insideCameraPos, 0.035);
     camera.lookAt(centerTarget);
     
-    // Check if we have arrived inside
+    // Check if we reached the inside
     if (camera.position.distanceTo(insideCameraPos) < 1.0) {
       appState = 'INSIDE';
-      controls.enabled = true; // Unlock user panning
+      controls.enabled = true; // Unlock your panning rules!
     }
     
   } else if (appState === 'INSIDE') {
-    // Phase 4: Full user control
+    // Phase 4: Full Control & Mirror Fade-In
     controls.update();
+    
+    // Magically fade the mirror into view now that we are inside
+    if (mirrorOpacity < 1.0) {
+      mirrorOpacity += 0.01;
+      videoMat.opacity = mirrorOpacity;
+      frameMat.uniforms.globalAlpha.value = mirrorOpacity;
+    }
   }
 
+  // Optimize video texture updates
   if (video.readyState >= video.HAVE_CURRENT_DATA) {
     videoTex.needsUpdate = true;
   }
