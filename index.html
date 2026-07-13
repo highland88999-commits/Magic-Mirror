@@ -10,15 +10,13 @@
     overflow: hidden; 
     background: #010103; 
     font-family: monospace;
+    touch-action: none; /* Prevents browser zooming/scrolling issues */
   }
   canvas { 
     display: block; 
     outline: none;
-    pointer-events: none; /* let start screen get clicks first */
   }
-  canvas.enabled {
-    pointer-events: auto; /* enable after start */
-  }
+  /* Start Screen Overlay */
   #start-screen {
     position: fixed;
     inset: 0;
@@ -31,9 +29,10 @@
     color: #00ffff;
     text-align: center;
     cursor: pointer;
-    transition: opacity 1.8s ease-out, visibility 1.8s ease-out;
+    transition: opacity 1.2s ease-out, visibility 1.2s ease-out;
     overflow: hidden;
-    touch-action: manipulation;
+    /* Force hardware acceleration for smoother fade */
+    transform: translateZ(0); 
   }
   #start-screen.hidden { 
     opacity: 0; 
@@ -70,7 +69,6 @@
     pointer-events: none;
   }
   
-  /* Added missing closing brackets to keyframes */
   @keyframes ticker { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
   @keyframes glitch { 0% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; } 20% { text-shadow: -2px 0 #ff00ff, 2px 0 #00ffff; } 40% { text-shadow: 1px 0 #00ffff, -1px 0 #ff00ff; } 100% { text-shadow: 1px 0 #ff00ff, -1px 0 #00ffff; } }
   @keyframes slowPan { 0% { background-position: 25% 50%; } 100% { background-position: 75% 50%; } }
@@ -78,7 +76,9 @@
 </style>
 </head>
 <body>
-<div id="start-screen">
+
+<!-- onclick="void(0)" is critical to force iOS Safari to recognize this div as clickable -->
+<div id="start-screen" onclick="void(0)">
   <div id="start-text">MIRROR, MIRROR ON THE WALL</div>
   <div id="ticker">TAP TO INITIALIZE SEQUENCE</div>
 </div>
@@ -113,8 +113,11 @@ composer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.5, 0.3);
 composer.addPass(bloomPass);
 
+// ────────────────────────────────────────────────
+// Controls
+// ────────────────────────────────────────────────
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enabled = false;
+controls.enabled = false; // Locked until screen is tapped
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.enablePan = true;
@@ -174,13 +177,13 @@ video.muted = true;
 video.playsInline = true;
 video.preload = 'auto';
 video.loop = false;
+video.crossOrigin = 'anonymous';
 
 const videoTex = new THREE.VideoTexture(video);
 videoTex.colorSpace = THREE.SRGBColorSpace;
 videoTex.minFilter = THREE.LinearFilter;
 videoTex.magFilter = THREE.LinearFilter;
 
-// Completing the cut-off code here:
 const videoMesh = new THREE.Mesh(
   new THREE.CircleGeometry(3.3, 64),
   new THREE.MeshBasicMaterial({ map: videoTex })
@@ -214,17 +217,24 @@ scene.add(new THREE.PointLight(0xaa00ff, 60, 150).position.set(20, 30, -20));
 scene.add(new THREE.DirectionalLight(0x4466ff, 1.2));
 
 // ────────────────────────────────────────────────
-// Interactivity & Start Logic
+// Interactivity & Start Logic (FIXED FOR MOBILE)
 // ────────────────────────────────────────────────
 const startScreen = document.getElementById('start-screen');
-const canvasEl = document.querySelector('canvas');
+let sequenceInitialized = false;
 
-startScreen.addEventListener('click', () => {
+function initSequence() {
+  if (sequenceInitialized) return;
+  sequenceInitialized = true;
+  
   startScreen.classList.add('hidden');
-  canvasEl.classList.add('enabled');
   controls.enabled = true; // Unlock camera controls
+  
   video.play().catch(e => console.error("Video play failed:", e));
-});
+}
+
+// Attach multiple listener types to ensure it fires reliably on all devices
+startScreen.addEventListener('click', initSequence);
+startScreen.addEventListener('pointerdown', initSequence);
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
