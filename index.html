@@ -119,7 +119,7 @@ document.body.appendChild(renderer.domElement);
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.5, 0.3);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.0, 0.5, 0.2);
 composer.addPass(bloomPass);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -145,15 +145,43 @@ innerDomeTex.colorSpace = THREE.SRGBColorSpace;
 const outerDomeTex = loader.load('https://files.catbox.moe/vhffm6.JPEG');
 outerDomeTex.colorSpace = THREE.SRGBColorSpace;
 const frameTex = loader.load('https://files.catbox.moe/98i4rp.jpeg');
+frameTex.colorSpace = THREE.SRGBColorSpace;
 
-// Fixed: Reset emissive to white so true textures show through
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshStandardMaterial({ map: floorTex, emissive: 0xffffff, emissiveIntensity: 0.15, roughness: 0.9 }));
+// ────────────────────────────────────────────────
+// FIX 1: Restored emissiveMap to all environment materials
+// ────────────────────────────────────────────────
+const floorMat = new THREE.MeshStandardMaterial({ 
+    map: floorTex, 
+    emissive: 0xffffff, 
+    emissiveMap: floorTex, // This forces the glow to come from the graphic, not over it
+    emissiveIntensity: 0.3, 
+    roughness: 0.9 
+});
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), floorMat);
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
-scene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 64, 32, 0, Math.PI*2, 0, Math.PI/2), new THREE.MeshStandardMaterial({ map: innerDomeTex, emissive: 0xffffff, emissiveIntensity: 0.15, side: THREE.BackSide })));
-scene.add(new THREE.Mesh(new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), new THREE.MeshStandardMaterial({ map: outerDomeTex, emissive: 0xffffff, emissiveIntensity: 0.25, side: THREE.FrontSide })));
+const innerDomeMat = new THREE.MeshStandardMaterial({ 
+    map: innerDomeTex, 
+    emissive: 0xffffff, 
+    emissiveMap: innerDomeTex, 
+    emissiveIntensity: 0.35, 
+    side: THREE.BackSide 
+});
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 64, 32, 0, Math.PI*2, 0, Math.PI/2), innerDomeMat));
 
+const outerDomeMat = new THREE.MeshStandardMaterial({ 
+    map: outerDomeTex, 
+    emissive: 0xffffff, 
+    emissiveMap: outerDomeTex, 
+    emissiveIntensity: 0.45, 
+    side: THREE.FrontSide 
+});
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), outerDomeMat));
+
+// ────────────────────────────────────────────────
+// FIX 2: Tighter Frame Shader to match the red arrows
+// ────────────────────────────────────────────────
 const mirrorGroup = new THREE.Group();
 
 const video = document.createElement('video');
@@ -173,16 +201,18 @@ const videoMesh = new THREE.Mesh(new THREE.CircleGeometry(3.3, 64), videoMat);
 videoMesh.position.set(0, 0, -0.15);
 mirrorGroup.add(videoMesh);
 
-// Fixed: The shader now correctly applies the edge fade to the alpha channel, creating true transparency instead of a black box.
 const frameMat = new THREE.ShaderMaterial({
   uniforms: { tDiffuse: { value: frameTex }, time: { value: 0 }, globalAlpha: { value: 0.0 } },
   vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `uniform sampler2D tDiffuse; uniform float time; uniform float globalAlpha; varying vec2 vUv; void main() { 
     vec4 c = texture2D(tDiffuse, vUv); 
     float d = distance(vUv, vec2(0.5)); 
-    if(d < 0.262) discard; 
+    
+    if(d < 0.265) discard; // Widened inner hole slightly to perfectly fit video
+    
     c.rgb *= (1.0 + sin(time * 1.5) * 0.25); 
-    float edgeFade = smoothstep(0.5, 0.44, d);
+    float edgeFade = smoothstep(0.5, 0.46, d); // Tightened outer edge to remove hazy box
+    
     gl_FragColor = vec4(c.rgb, globalAlpha * edgeFade); }`,
   transparent: true, side: THREE.DoubleSide
 });
@@ -198,10 +228,10 @@ window.addEventListener('resize', () => {
 });
 window.dispatchEvent(new Event('resize'));
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.15));
-scene.add(new THREE.PointLight(0x00ffff, 60, 150).position.set(-20, 30, 20));
-scene.add(new THREE.PointLight(0xaa00ff, 60, 150).position.set(20, 30, -20));
-scene.add(new THREE.DirectionalLight(0x4466ff, 1.2));
+scene.add(new THREE.AmbientLight(0xffffff, 0.1));
+scene.add(new THREE.PointLight(0x00ffff, 40, 150).position.set(-20, 30, 20));
+scene.add(new THREE.PointLight(0xaa00ff, 40, 150).position.set(20, 30, -20));
+scene.add(new THREE.DirectionalLight(0x4466ff, 1.0));
 
 let engineState = 'ORBITING';
 let orbitAngle = 0;
