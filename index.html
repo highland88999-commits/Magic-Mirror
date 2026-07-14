@@ -68,7 +68,7 @@
     if (appState === 'LANDING') {
       appState = 'OUTSIDE';
       
-      // Unlock all 5 videos simultaneously
+      // Unlock all media arrays simultaneously
       if (window.unlockMedia) window.unlockMedia();
 
       document.getElementById('landing-layer').style.opacity = '0';
@@ -108,9 +108,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 // Scene Setup
 // ────────────────────────────────────────────────
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x010103);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 3000);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 4000);
 camera.position.set(0, 50, 250); 
 scene.add(camera);
 
@@ -135,7 +134,17 @@ controls.enablePan = false;
 controls.target.set(0, 15, 0);
 controls.maxPolarAngle = Math.PI / 2 + 0.05; 
 controls.minDistance = 8;
-controls.maxDistance = 90;
+controls.maxDistance = 140; // Extended slightly to allow viewing the sky
+
+// ────────────────────────────────────────────────
+// Time-Based Sky Logic
+// ────────────────────────────────────────────────
+const currentHour = new Date().getHours();
+const isDaytime = currentHour >= 5 && currentHour < 20;
+
+const skyVideoUrl = isDaytime 
+    ? 'https://file.garden/alXjUY_coXedLaNA/YTDown.com_Shorts_above-the-clouds-sunset-ethereal-ocean-v_Media_FfDVZAOQIio_001_1080p.mp4' 
+    : 'https://file.garden/alXjUY_coXedLaNA/ScreenRecording_07-14-2026%2001-15-31_1.mov';
 
 // ────────────────────────────────────────────────
 // Dynamic Video Texture Pipeline
@@ -150,12 +159,12 @@ function createVideo(url) {
     v.setAttribute('webkit-playsinline', 'webkit-playsinline');
     v.setAttribute('playsinline', 'playsinline');
     v.setAttribute('loop', 'true');
-    // Failsafe loop trigger
     v.addEventListener('ended', () => { v.currentTime = 0; v.play(); });
     return v;
 }
 
 // Instantiate all video elements
+const skyVid = createVideo(skyVideoUrl);
 const vortexVid = createVideo('https://files.catbox.moe/4ab3h5.mp4');
 const frameVid = createVideo('https://files.catbox.moe/wmhz50.mp4');
 const floorVid = createVideo('https://files.catbox.moe/ot3ez3.mp4');
@@ -163,32 +172,38 @@ const innerVid = createVideo('https://files.catbox.moe/ut650a.mp4');
 const outerVid = createVideo('https://files.catbox.moe/cfxyi1.mp4');
 
 // Group for the master unlocker
-const mediaPool = [vortexVid, frameVid, floorVid, innerVid, outerVid];
+const mediaPool = [skyVid, vortexVid, frameVid, floorVid, innerVid, outerVid];
 window.unlockMedia = () => { 
     mediaPool.forEach(vid => vid.play().catch(e => console.warn("Autoplay constraint:", e))); 
 };
 
 // Convert to THREE VideoTextures
+const skyTex = new THREE.VideoTexture(skyVid); skyTex.colorSpace = THREE.SRGBColorSpace;
 const vortexTex = new THREE.VideoTexture(vortexVid); vortexTex.colorSpace = THREE.SRGBColorSpace;
 const frameTex = new THREE.VideoTexture(frameVid); frameTex.colorSpace = THREE.SRGBColorSpace;
 const floorTex = new THREE.VideoTexture(floorVid); floorTex.colorSpace = THREE.SRGBColorSpace;
 const innerTex = new THREE.VideoTexture(innerVid); innerTex.colorSpace = THREE.SRGBColorSpace;
 const outerTex = new THREE.VideoTexture(outerVid); outerTex.colorSpace = THREE.SRGBColorSpace;
 
-floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
-floorTex.repeat.set(4, 4);
-
 // ────────────────────────────────────────────────
 // Environmental Geometry Mapping
 // ────────────────────────────────────────────────
+// The Skybox (Massive 1000-unit sphere encompassing everything)
+const skyMat = new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, depthWrite: false });
+const skySphere = new THREE.Mesh(new THREE.SphereGeometry(1000, 64, 32), skyMat);
+scene.add(skySphere);
+
+// Centered Floor (Removed repeat mapping to perfectly center one instance of the video)
 const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, emissive: 0xffffff, emissiveMap: floorTex, emissiveIntensity: 0.3, roughness: 0.9 });
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), floorMat);
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
+// Centered Inner Dome
 const innerDomeMat = new THREE.MeshStandardMaterial({ map: innerTex, emissive: 0xffffff, emissiveMap: innerTex, emissiveIntensity: 0.35, side: THREE.BackSide });
 scene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 64, 32, 0, Math.PI*2, 0, Math.PI/2), innerDomeMat));
 
+// Centered Outer Dome
 const outerDomeMat = new THREE.MeshStandardMaterial({ map: outerTex, emissive: 0xffffff, emissiveMap: outerTex, emissiveIntensity: 0.45, side: THREE.FrontSide });
 scene.add(new THREE.Mesh(new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), outerDomeMat));
 
@@ -228,7 +243,6 @@ const frameMat = new THREE.ShaderMaterial({
       float innerAlpha = smoothstep(0.24, 0.27, d); 
       float innerShadow = smoothstep(0.24, 0.32, d);
       
-      // Video pulse effect synced to shader time
       vec3 pulsedColor = c.rgb * (1.0 + sin(time * 1.5) * 0.25); 
       
       float outerAlpha = smoothstep(0.48, 0.44, d); 
