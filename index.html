@@ -68,7 +68,6 @@
     if (appState === 'LANDING') {
       appState = 'OUTSIDE';
       
-      // Unlock all media arrays simultaneously
       if (window.unlockMedia) window.unlockMedia();
 
       document.getElementById('landing-layer').style.opacity = '0';
@@ -134,7 +133,7 @@ controls.enablePan = false;
 controls.target.set(0, 15, 0);
 controls.maxPolarAngle = Math.PI / 2 + 0.05; 
 controls.minDistance = 8;
-controls.maxDistance = 140; // Extended slightly to allow viewing the sky
+controls.maxDistance = 140; 
 
 // ────────────────────────────────────────────────
 // Time-Based Sky Logic
@@ -167,11 +166,10 @@ function createVideo(url) {
 const skyVid = createVideo(skyVideoUrl);
 const vortexVid = createVideo('https://files.catbox.moe/4ab3h5.mp4');
 const frameVid = createVideo('https://files.catbox.moe/wmhz50.mp4');
-const floorVid = createVideo('https://files.catbox.moe/ot3ez3.mp4');
+const floorVid = createVideo('https://file.garden/alXjUY_coXedLaNA/gemini_generated_video_B04513D4.mp4'); // UPDATED
 const innerVid = createVideo('https://files.catbox.moe/ut650a.mp4');
 const outerVid = createVideo('https://files.catbox.moe/cfxyi1.mp4');
 
-// Group for the master unlocker
 const mediaPool = [skyVid, vortexVid, frameVid, floorVid, innerVid, outerVid];
 window.unlockMedia = () => { 
     mediaPool.forEach(vid => vid.play().catch(e => console.warn("Autoplay constraint:", e))); 
@@ -185,25 +183,36 @@ const floorTex = new THREE.VideoTexture(floorVid); floorTex.colorSpace = THREE.S
 const innerTex = new THREE.VideoTexture(innerVid); innerTex.colorSpace = THREE.SRGBColorSpace;
 const outerTex = new THREE.VideoTexture(outerVid); outerTex.colorSpace = THREE.SRGBColorSpace;
 
+// Apply Seamless Mirror Wrapping to prevent ANY cutoffs or sharp edges
+const allTextures = [skyTex, vortexTex, frameTex, floorTex, innerTex, outerTex];
+allTextures.forEach(tex => {
+    tex.wrapS = THREE.MirroredRepeatWrapping;
+    tex.wrapT = THREE.MirroredRepeatWrapping;
+});
+
+// Map spheres 2:1 horizontally so the back seam reflects perfectly into itself
+skyTex.repeat.set(2, 1);
+innerTex.repeat.set(2, 1);
+outerTex.repeat.set(2, 1);
+
+// Tile the floor symmetrically so it stretches smoothly to the horizon without a harsh cutoff
+floorTex.repeat.set(4, 4);
+
 // ────────────────────────────────────────────────
 // Environmental Geometry Mapping
 // ────────────────────────────────────────────────
-// The Skybox (Massive 1000-unit sphere encompassing everything)
 const skyMat = new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, depthWrite: false });
 const skySphere = new THREE.Mesh(new THREE.SphereGeometry(1000, 64, 32), skyMat);
 scene.add(skySphere);
 
-// Centered Floor (Removed repeat mapping to perfectly center one instance of the video)
 const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, emissive: 0xffffff, emissiveMap: floorTex, emissiveIntensity: 0.3, roughness: 0.9 });
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), floorMat);
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
-// Centered Inner Dome
 const innerDomeMat = new THREE.MeshStandardMaterial({ map: innerTex, emissive: 0xffffff, emissiveMap: innerTex, emissiveIntensity: 0.35, side: THREE.BackSide });
 scene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 64, 32, 0, Math.PI*2, 0, Math.PI/2), innerDomeMat));
 
-// Centered Outer Dome
 const outerDomeMat = new THREE.MeshStandardMaterial({ map: outerTex, emissive: 0xffffff, emissiveMap: outerTex, emissiveIntensity: 0.45, side: THREE.FrontSide });
 scene.add(new THREE.Mesh(new THREE.SphereGeometry(102, 64, 32, 0, Math.PI*2, 0, Math.PI/2), outerDomeMat));
 
@@ -214,7 +223,6 @@ const mirrorGroup = new THREE.Group();
 const frameSize = 12; 
 const innerHoleRatio = 0.26; 
 
-// The Video Mesh
 const overlapMargin = 0.04; 
 const videoRadius = (frameSize * innerHoleRatio) + overlapMargin; 
 const videoMat = new THREE.MeshBasicMaterial({ 
@@ -227,7 +235,6 @@ const videoMesh = new THREE.Mesh(new THREE.CircleGeometry(videoRadius, 64), vide
 videoMesh.position.set(0, 0, -0.02); 
 mirrorGroup.add(videoMesh);
 
-// The Blended Video Frame Shader
 const frameMat = new THREE.ShaderMaterial({
   uniforms: { tDiffuse: { value: frameTex }, time: { value: 0 }, globalAlpha: { value: 0.0 } },
   vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
