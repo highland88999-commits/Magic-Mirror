@@ -166,7 +166,7 @@ function createVideo(url) {
 const skyVid = createVideo(skyVideoUrl);
 const vortexVid = createVideo('https://files.catbox.moe/4ab3h5.mp4');
 const frameVid = createVideo('https://files.catbox.moe/wmhz50.mp4');
-const floorVid = createVideo('https://file.garden/alXjUY_coXedLaNA/gemini_generated_video_B04513D4.mp4'); // UPDATED
+const floorVid = createVideo('https://file.garden/alXjUY_coXedLaNA/gemini_generated_video_B04513D4.mp4'); 
 const innerVid = createVideo('https://files.catbox.moe/ut650a.mp4');
 const outerVid = createVideo('https://files.catbox.moe/cfxyi1.mp4');
 
@@ -183,19 +183,26 @@ const floorTex = new THREE.VideoTexture(floorVid); floorTex.colorSpace = THREE.S
 const innerTex = new THREE.VideoTexture(innerVid); innerTex.colorSpace = THREE.SRGBColorSpace;
 const outerTex = new THREE.VideoTexture(outerVid); outerTex.colorSpace = THREE.SRGBColorSpace;
 
-// Apply Seamless Mirror Wrapping to prevent ANY cutoffs or sharp edges
-const allTextures = [skyTex, vortexTex, frameTex, floorTex, innerTex, outerTex];
-allTextures.forEach(tex => {
+
+// 1. SPHERE MAPPING (Expansive & Seamless)
+// Spheres look best with standard repeating so they don't fold/mirror at the seams.
+// Mapped 1:1 so they wrap the entire sky and domes without repeating geometric patterns.
+const sphereTextures = [skyTex, innerTex, outerTex];
+sphereTextures.forEach(tex => {
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping; // Clamps the top/bottom so poles don't warp weirdly
+    tex.repeat.set(1, 1);
+});
+
+// 2. FLAT MAPPING (Mirrored)
+// The floor and frames still benefit from mirrored wrapping to prevent edge cutoffs.
+const flatTextures = [vortexTex, frameTex, floorTex];
+flatTextures.forEach(tex => {
     tex.wrapS = THREE.MirroredRepeatWrapping;
     tex.wrapT = THREE.MirroredRepeatWrapping;
 });
 
-// Map spheres 2:1 horizontally so the back seam reflects perfectly into itself
-skyTex.repeat.set(2, 1);
-innerTex.repeat.set(2, 1);
-outerTex.repeat.set(2, 1);
-
-// Tile the floor symmetrically so it stretches smoothly to the horizon without a harsh cutoff
+// Tile the floor symmetrically
 floorTex.repeat.set(4, 4);
 
 // ────────────────────────────────────────────────
